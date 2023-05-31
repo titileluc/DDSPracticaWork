@@ -1,5 +1,5 @@
 ---
-title: "IDSml"
+title: "01 - Initial Data Discovery"
 author: "Humbert Costas, Sergi Puigventos Ventura & Daniel Da Graça"
 date: "`r Sys.Date()`"
 output: html_document
@@ -85,6 +85,7 @@ tryCatch(
 )
 ```
 
+
 ## Exploration of the training dataset
 
 ```{r initial_training_data_exploration}
@@ -116,6 +117,7 @@ if(readingdataOK)
                         xlab = "Values", ylab = "Occurrences", main = features[i,1])
             }
         }else{
+            print(str(col))
             colsummary <- summary(col) 
             print(colsummary)
             boxplot(col, na.rm = TRUE)
@@ -124,58 +126,3 @@ if(readingdataOK)
 }
 ```
 
-## Including Plots
-
-You can also embed plots, for example:
-
-```{r feature_selection, echo=FALSE}
-data1 <- data[,c("SrcBytes", "DstBytes", "Land", "WrongFragment", "Urgent", "SameSrvRate", "LoggedIn",  "DstHostSameSrvRate", "DstHostSrvCount","Flag","Attack" )]
-# data1 <- data[,c(4:12)]
-data1$Attack <- as.factor(data1$Attack)
-```
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
-
-```{r train_test, echo=FALSE}
-inTrain <- createDataPartition(y=data1$Attack,p=0.1, list=FALSE)
-str (data1)
-training <- data1[inTrain,]
-testing <- data1[-inTrain,]
-dim <-nrow (training)
-dim(training)
-```
-
-```{r train_random_forest, echo=FALSE}
-output.forest <- randomForest(Attack ~ ., data = training)
-print(output.forest)
-plot(output.forest)
-```
-
-```{r predict, echo=FALSE}
-pred <- predict(output.forest,testing)
-str (pred)
-
-```
-
-```{r simple_validation, echo=FALSE}
-valid <- testing
-valid$Attack <- as.character(valid$Attack)
-valid$pred <- as.character(pred)
-valid$match <- valid$Attack == valid$pred
-
-table(valid$match)
-```
-
-```{r simple_validation2, echo=FALSE}
-table(valid[, c("match", "Attack")])
-```
-
-```{r conf_matrix, echo=FALSE}
-valid <- testing
-cm <- confusionMatrix(pred, testing$Attack)
-kableExtra::kable(cm$table)
-```
-
-```{r conf_matrix_heatmap, echo=FALSE}
-heatmap(cm$table)
-```
