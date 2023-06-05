@@ -1,0 +1,441 @@
+---
+title: "01 - Initial Data Discovery"
+author: "Humbert Costas, Sergi Puigventos Ventura & Daniel Da Graça"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE, results='hide'}
+knitr::opts_chunk$set(echo = TRUE)
+# Packages required for the project
+required_packages <- c('rstudioapi', 'fs', 'stringr', 'knitr', 'randomForest', 'readr', 'caret', 'e1071','kableExtra')
+# Installation of all required packages not already installed
+install.packages(setdiff(required_packages, rownames(installed.packages())))
+# Loading required packages
+library('rstudioapi', warn.conflicts = FALSE)
+library('fs', warn.conflicts = FALSE)
+library('stringr', warn.conflicts = FALSE)
+library('randomForest', warn.conflicts = FALSE)
+library('readr', warn.conflicts = FALSE)
+library('caret', warn.conflicts = FALSE)
+library('e1071', warn.conflicts = FALSE)
+# Get this rmd file current absolute path 
+# (from: https://stackoverflow.com/questions/47044068/get-the-path-of-current-script)
+if (rstudioapi::isAvailable()) {
+    wdir <- dirname(getActiveDocumentContext()$path)
+}else{
+    wdir <- getwd()
+}
+tryCatch(expr = {setwd(wdir)}, 
+         error = function(e){print(e)}, 
+         warning = function(w){print(w)})
+```
+
+## REFERENCES:
+
+List of references:
+
+-   Source data [KDD Cup 1999 Data Data Set](https://archive.ics.uci.edu/ml/datasets/kdd+cup+1999+data)
+-   A Detailed [Analysis of the KDD CUP 99 Data Set](https://www.ecb.torontomu.ca/~bagheri/papers/cisda.pdf)
+-   KDD [download archive](https://www.kdd.org/kdd-cup/view/kdd-cup-1999/Data)
+-   Kaggle comunity [notebooks](https://www.kaggle.com/datasets/galaxyh/kdd-cup-1999-data/code) with KDD CUP 99 data set.
+
+```{r read_data}
+readingdataOK <- TRUE
+tryCatch(
+    expr = {
+        # Loading the full dataset
+        data_full <- read_csv("Book1.csv",
+                          col_types = cols(SrcBytes = col_integer(),
+                                           DstBytes = col_integer(), Land = col_integer(),
+                                           WrongFragment = col_integer(), Urgent = col_number(),
+                                           Hot = col_number(), NumFailedLogin = col_integer()))
+        
+        # Loading the training dataset
+        data <- read.csv (file="Book2.csv",header=T)
+        ncols <- ncol(data)
+        
+        # Loading a reference data set with for each data feature: a name, data type, stastictical type and description
+        # This info was collected from: 
+        # - the header record for the name, 
+        # - the R command str(data) for the data type, 
+        # - the kddcup.names (http://kdd.org/cupfiles/KDDCupData/1999/kddcup.names) for the statistical type
+        # - and asking chatgpt for a brief functional description for each field
+        features <- read.csv (file="features.csv",header=T)
+        nfeatures <- nrow(features)
+        
+        if(ncols != nfeatures){
+            cat(paste("the number of cols on the trainig dataset,", ncols, 
+                      "does not match the expected number of features", nfeatures, "."))
+            readingdataOK <- FALSE
+        }
+        
+        # Loading a data set with a categorization of the response variable: attack types 
+        # (https://kdd.org/cupfiles/KDDCupData/1999/training_attack_types)        
+        attackcats <- read.csv (file="attack_types.csv",header=F)
+        
+        knitr::kable(features)
+        
+    }, error = function(e){
+        readingdataOK <- FALSE
+        print(e)
+    }, warning = function(w){
+        print(w)
+    }
+)
+```
+#Añadimos Features
+1. Se añade inicialmente la Categoria de ataque para análisis, incluyendo DOS, Probe, R2L, U2R, Other y Normal.
+2. Tras el análisis iterativo de features por categoria de ataque, se concluye que hay determinados features que son relevantes para unas categorias concretas mientras que otros son más generales para la identificación de todas ellas. 
+3. Se agrupan features que parecen interesantes de forma conjunta: 
+  3.1 U2RFeature que agrupa features interesantes para la categoria de ataques U2R y L2R: NumCompromised, NumRoot, NumShells, NumFile
+  3.2 TotalBytes que suma los bytes recibidos y enviados (SrcBytes + DstBytes)
+  
+
+```{r AÑADIMOS FEATURES}
+
+# Creamos columna Attack Category y la rellenamos en función del ataque
+data$AttackCategory <- ifelse(tolower(data$Attack) == "normal.", "normal",
+  ifelse(tolower(data$Attack) %in% c("back.", "land.", "neptune.", "pod.", "smurf.", "teardrop.","apache2."), "DoS",
+                          ifelse(tolower(data$Attack) %in% c("buffer_overflow.", "loadmodule.", "perl.", "rootkit."),        "U2R",
+                            ifelse(tolower(data$Attack) %in% c("ftp_write.", "guess_passwd.", "imap.", "multihop.",                                                                               "phf.", "spy.", "warezclient.", "warezmaster."),           "R2L",
+                              ifelse(tolower(data$Attack) %in% c("nmap.","ipsweep.","satan.","portsweep.","snmpgetattack.", "mscan."), "Probe",
+                                             "Other")))))
+
+data['TotalBytes'] = data['SrcBytes'] + data['DstBytes']
+#Considerando los tipos de ataques U2R el tipo más grave que deberíamos identificar, creamos una feature nueva combinación de aquellas que tienen mayor correlación con este tipo de ataques
+data$U2RFeatures <- as.integer(data$NumCompromised > 0 | data$NumRoot > 0 | data$NumShells > 0 | data$NumFile > 0)
+
+# Ampliamos los features y el contador de columnas
+ncols <- ncols+3
+features <- rbind(features, c("AttackCategory", "chr", "symbolic", "DoS, Probe, Normal, U2R, L2R, Others"))
+features <- rbind(features, c("TotalBytes", "int", "continuous", "SrcBytes + DstBytes"))
+features <- rbind(features, c("U2RFeatures", "int", "symbolic", "NumCompromised > 0 | data$NumRoot > 0 | data$NumShells > 0 | data$NumFile"))
+
+```
+
+```{r EXPLORACIÓN VISUAL ATAQUES}
+
+# Count the occurrences of each attack type
+attack_counts <- table(data$Attack)
+# Convert the attack counts to a data frame for plotting
+attack_df <- data.frame(Attack = names(attack_counts),
+ Count = as.numeric(attack_counts))
+# Sort the attack types in descending order based on their counts
+attack_df <- attack_df[order(attack_df$Count, decreasing = TRUE), ]
+
+# Excluimos los normales y los Neptune que son más de 20k de tipo DOS
+excluded_attack <- c("normal.","neptune.")
+attack_df <- attack_df[attack_df$Attack != excluded_attack, ]
+
+# Select the top 30 most common attacks
+top_30_attacks <- head(attack_df, 30)
+
+# Create the bar plot
+bar_plot <- ggplot(top_30_attacks, aes(x = reorder(Attack, -Count), y = Count, fill = Attack)) +
+ geom_bar(stat = "identity") +
+ geom_text(aes(label = Count), vjust = -0.5)+
+ labs(x = "Attack Type", y = "Count", title = "Attacks by type") +
+ theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+ coord_flip()
+# Display the bar plot
+print(bar_plot)
+
+```
+```{r LIMPIEZA ATAQUES}
+# Paso 1: Calcular la cantidad de ocurrencias de cada ataque
+ocurrencias <- table(data$Attack)
+
+# Paso 2: Filtrar el dataset para ataques con al menos 15 ocurrencias
+ataques_frecuentes <- names(ocurrencias[ocurrencias >= 15])
+data <- data[data$Attack %in% ataques_frecuentes, ]
+
+```
+
+```{r EXPLORACIÓN VISUAL CATEGORIAS ATAQUES}
+
+# Count the occurrences of each attack type
+attack_counts <- table(data$AttackCategory)
+# Convert the attack counts to a data frame for plotting
+attack_df <- data.frame(Attack = names(attack_counts),
+ Count = as.numeric(attack_counts))
+# Sort the attack types in descending order based on their counts
+attack_df <- attack_df[order(attack_df$Count, decreasing = TRUE), ]
+
+# Excluimos los normales y los Neptune que son más de 20k de tipo DOS
+excluded_attack <- c("normal")
+attack_df <- attack_df[attack_df$Attack != excluded_attack, ]
+
+# Crración gráfico de barras
+bar_plot <- ggplot(attack_df, aes(x = reorder(Attack, -Count), y = Count, fill = Attack)) +
+ geom_bar(stat = "identity") +
+ geom_text(aes(label = Count), vjust = -0.5)+
+ labs(x = "Attack Type", y = "Count", title = "Attacks by Category") +
+ theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+ coord_flip()
+# Display the bar plot
+print(bar_plot)
+
+```
+
+## Exploration of the training dataset
+
+
+
+```{r initial_training_data_exploration}
+if(readingdataOK)
+{
+    for(i in 1:ncols) {
+        col <- data[ , i]
+        cat(paste('----------------------------\nDetails of feature', i, '[', features[i,1], ']:\n'), fill = TRUE)
+        cat(paste('   Data type:', features[i, 2]), fill = TRUE)
+        cat(paste('   Statistical type:', features[i, 3]), fill = TRUE)
+        cat(paste('   Field Description:', features[i, 4], '\n'), fill = TRUE)
+        nmissingvals <- sum(is.na(col)) # 'is.finite()' function is used to identify non-NA and non-NaN values
+        cat(paste('   Number of Missing values:', nmissingvals, '\n\n'))
+        if (features[i, 3] == 'symbolic'){
+            values <- levels(factor(col)) # Getting the values
+            values.dis <- data.frame(table(col)) # Getting values distribution
+            colnames(values.dis)[1] <- "Vals"
+            colnames(values.dis)[2] <- "Freq"
+            nvals <- nrow(values.dis)
+            values.dis <- values.dis[order(values.dis$Freq, decreasing=TRUE),]
+            if(nvals >= 30){
+                print(values.dis[1:30,], row.names = FALSE)
+                cat(paste("\n... [", (nvals-30), "more]" ), fill = TRUE)
+                barplot(values.dis$Freq[1:15], names.arg = values.dis$Vals[1:15], 
+                        xlab = "Values", ylab = "Occurrences", main = features[i,1])
+            }else{
+                print(values.dis, row.names = FALSE)
+                barplot(values.dis$Freq, names.arg = values.dis$Vals, 
+                        xlab = "Values", ylab = "Occurrences", main = features[i,1])
+            }
+        }else{
+            print(str(col))
+            colsummary <- summary(col) 
+            print(colsummary)
+            boxplot(col, na.rm = TRUE)
+        }
+    }
+}
+```
+
+```{r Correlacion de variables por categoria de ataque}
+
+#Segmentamos los datos por categoria de ataque
+subsets <- split(data, data$AttackCategory)
+results <- lapply(subsets, function(subset) lapply(subset, table))
+
+#Gráfico entre variables categoricas
+# Crear una tabla de contingencia entre las dos variables categóricas
+table_contingency <- table(subsets$U2R$NumFile, subsets$U2R$Attack)
+
+# Crear un gráfico de heatmap para la tabla de contingencia
+heatmap(table_contingency, 
+        main = "U2R: Relación entre U2RNumFile y Attack",
+        xlab = "Attack", ylab = "NumFile",
+        col = colorRampPalette(c("white", "blue"))(100)) # Puedes personalizar la paleta de colores según tus preferencias
+
+
+# Supongamos que quieres visualizar la distribución de la columna "Variable1" en cada lista de subsets
+variable <- "TotalBytes"
+
+# Crear una ventana de gráficos
+par(mfrow = c(length(subsets)/2, 2), mar = c(3, 3, 2, 1))
+colores <- c("red", "blue", "green", "yellow", "orange")
+
+
+# Gráfico entre categorica y continua
+for (i in 1:length(subsets)) {
+  subset <- subsets[[i]]
+  boxplot(subset[[variable]] ~ subset$Attack, data = subset, main = names(subsets)[i], xlab = "Attack", ylab = variable)
+}
+
+# Iterar sobre cada lista de subsets y generar un histograma para la columna "Variable1"
+for (i in 1:length(subsets)) {
+  subset <- subsets[[i]]
+  hist(subset[[variable]], main = names(subsets)[i], xlab = variable, ylab = "Frecuencia", col = colores)
+}
+
+# Iterar sobre cada lista de subsets y generar un gráfico de barras
+for (i in 1:length(subsets)) {
+  subset <- subsets[[i]]
+  counts <- table(subset$TotalBytes)
+  barplot(counts, main = names(subsets)[i], xlab = variable, ylab = "Frecuencia", col = colores)
+}
+
+
+```
+#Diferencias por categoria de ataque
+Tras evaluar los features por categoria de ataque se concluye que los features a seleccionar deberían ser específicos para identificar cada categoria de ataque. Se crea el feature específico para identificar mayor % de U2R pero el modelo no lo coje como un feature con peso para evaluar correctamente.
+Se opta por dos opciones:
+ 1. Reducir el volumen de elementos en el dataset similares, esperando que esto reduzca la volumetria de ataques DOS y no ataques (o normales) compensando la detección hacía ataques U2R y R2L.
+ 2. Entrenar dos modelos independientes, uno para ataques de conexión (R2L) y escalado de privilegios (U2R) y otro para los ataques de tipo tráfico (DOS y Probe).
+
+
+```{r Ajustar Dataset eliminando datos similares, echo=FALSE}
+columns <- c("Duration", "TotalBytes")
+# Assume "subset" is your data subset
+
+library(caret)
+
+# Select the columns to be used for finding similarity
+#numeric_columns <- c("Duration", "TotalBytes", "DstHostSameSrvRate", "DstHostSrvCount")
+
+
+numeric_columns <- c("Duration", "TotalBytes")
+categorical_columns <- c("AttackCategory","Flag")
+
+# Normalize the numeric columns
+normalized_numeric <- scale(data[, numeric_columns])
+encoded_categorical <- predict(dummyVars(~., data = data[, categorical_columns]), newdata = data[, categorical_columns])
+
+# Combine the normalized numeric and encoded categorical variables
+normalized_subset <- cbind(normalized_numeric, encoded_categorical)
+
+# Apply k-means clustering
+k <- 5  # Number of clusters
+kmeans_result <- kmeans(normalized_subset, centers = k)
+#kmeans_result <- kmeans(normalized_numeric, centers = k)
+cluster_assignments <- kmeans_result$cluster
+
+# Find the similar records in a specific cluster
+target_cluster <- 3  # Specify the cluster you want to explore
+similar_records <- data[cluster_assignments == target_cluster, ]
+
+# Exclude the rows belonging to the target cluster
+filtered_subset <- data[cluster_assignments != target_cluster, ]
+
+# Print the similar records
+print(similar_records)
+
+```
+
+```{r feature_selection, echo=FALSE}
+
+data1 <- data[,c("Duration", "U2RFeatures", "Service", "Flag", "TotalBytes", "SameSrvRate", "LoggedIn", "DstHostCount", "DstHostSameSrvRate", "DstHostSrvCount","Attack")]
+
+data1$Attack <- as.factor(data1$Attack)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+```{r train_test, echo=FALSE}
+inTrain <- createDataPartition(y=data1$Attack,p=0.2, list=FALSE)
+str (data1)
+training <- data1[inTrain,]
+testing <- data1[-inTrain,]
+
+#testing <- data_full
+
+dim <-nrow (training)
+dim(training)
+```
+
+
+```{r train_random_forest, echo=FALSE}
+output.forest <- randomForest(Attack ~ ., data = training)
+
+# Cambiar el modelo a RandomTree que no vemos mejoria
+#output.forest$type <- "randomTree"
+
+print(output.forest)
+plot(output.forest)
+```
+#Mediante identificar la importancia de las features en el modelo, hemos podido eliminar features en las que el modelo no les daba ningun peso, por ejemplo: Land, WrongFragment o Urgent.
+
+```{r Importancia de cada variable, echo=FALSE}
+
+# Obtener la importancia de las características
+importance <- importance(output.forest)
+
+# Imprimir la importancia de las características
+print(importance)
+varImpPlot(output.forest)
+
+
+```
+
+
+```{r predict, echo=FALSE}
+pred <- predict(output.forest,testing)
+str (pred)
+
+```
+
+```{r simple_validation, echo=FALSE}
+valid <- testing
+valid$Attack <- as.character(valid$Attack)
+valid$pred <- as.character(pred)
+valid$match <- valid$Attack == valid$pred
+
+
+percentage_true <- round(prop.table(table(valid$match))[2] * 100, 2)
+print(percentage_true)
+
+
+table(valid$match)
+
+
+```
+
+```{r simple_validation2, echo=FALSE}
+
+transposed_table2 <- t(table(valid[, c("match", "Attack")]))
+#print(transposed_table2)
+
+# Calcular el porcentaje de TRUEs respecto al total de cada fila
+percentage_true <- round(prop.table(transposed_table2, margin = 1)[, "TRUE"] * 100, 2)
+
+# Añadir la columna de porcentajes a la tabla transpuesta
+transposed_table2 <- cbind(transposed_table2, Percentage = percentage_true)
+
+# Ordenar la tabla por el porcentaje de TRUEs de forma descendente
+transposed_table2 <- transposed_table2[order(-percentage_true), ]
+
+# Mostrar el resultado
+print(transposed_table2)
+
+```
+
+```{r Validacion por categoria de ataque, echo=FALSE}
+
+
+# Creamos columna Attack Category y la rellenamos en función del ataque
+valid$AttackCategory <- ifelse(tolower(valid$Attack) == "normal.", "normal",
+  ifelse(tolower(valid$Attack) %in% c("back.", "land.", "neptune.", "pod.", "smurf.", "teardrop.","apache2."), "DoS",
+                          ifelse(tolower(valid$Attack) %in% c("buffer_overflow.", "loadmodule.", "perl.", "rootkit."),        "U2R",
+                            ifelse(tolower(valid$Attack) %in% c("ftp_write.", "guess_passwd.", "imap.", "multihop.",                                                                               "phf.", "spy.", "warezclient.", "warezmaster."),           "R2L",
+                              ifelse(tolower(valid$Attack) %in% c("nmap.","ipsweep.","satan.","portsweep.","snmpgetattack.", "mscan."), "Probe",
+                                             "Other")))))
+
+transposed_table2 <- t(table(valid[, c("match", "AttackCategory")]))
+
+# Calcular el porcentaje de TRUEs respecto al total de cada fila
+percentage_true <- round(prop.table(transposed_table2, margin = 1)[, "TRUE"] * 100, 2)
+
+# Añadir la columna de porcentajes a la tabla transpuesta
+transposed_table2 <- cbind(transposed_table2, Percentage = percentage_true)
+
+# Ordenar la tabla por el porcentaje de TRUEs de forma descendente
+transposed_table2 <- transposed_table2[order(-percentage_true), ]
+
+# Mostrar el resultado
+print(transposed_table2)
+```
+
+
+```{r conf_matrix, echo=FALSE}
+valid <- testing
+cm <- confusionMatrix(pred, testing$Attack)
+kableExtra::kable(cm$table)
+```
+
+```{r conf_matrix_heatmap, echo=FALSE}
+heatmap(cm$table)
+```
+
+
+
+
+

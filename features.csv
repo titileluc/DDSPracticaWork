@@ -41,3 +41,4 @@ DstHostSrvSerrorRate,num,continuous,The percentage of connections to the same se
 DstHostRerrorRate,num,continuous,The percentage of connections to the destination host that have "REJ" errors. It represents the ratio of connections with "REJ" errors to the total number of connections to the destination host.
 DstHostSrvRerrorRate,num,continuous,The percentage of connections to the same service on the destination host that have "REJ" errors. It represents the ratio of connections with "REJ" errors to the total number of connections to the same service on the destination host.
 Attack,chr,symbolic,Response variable with a value for each type of attack and the value "normal." when no attack was suffered for the case.
+

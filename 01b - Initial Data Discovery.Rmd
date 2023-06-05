@@ -1,0 +1,414 @@
+---
+title: "01 - Initial Data Discovery"
+author: "Sergi Puigventos Ventura & Daniel Da Graça"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE, results='hide'}
+knitr::opts_chunk$set(echo = TRUE)
+# Packages required for the project
+required_packages <- c('rstudioapi', 'fs', 'stringr', 'knitr', 'randomForest', 'readr', 'caret', 'e1071', 'tidyverse'
+                       , 'ggplot2', 'dplyr', 'corrplot', 'psych', 'foreach', 'doParallel')
+# Installation of all required packages not already installed
+install.packages(setdiff(required_packages, rownames(installed.packages())))
+# Loading required packages
+library('rstudioapi', warn.conflicts = FALSE)
+library('fs', warn.conflicts = FALSE)
+library('stringr', warn.conflicts = FALSE)
+library('randomForest', warn.conflicts = FALSE)
+library('readr', warn.conflicts = FALSE)
+library('caret', warn.conflicts = FALSE)
+library('e1071', warn.conflicts = FALSE)
+library('tidyverse', warn.conflicts = FALSE)
+library('ggplot2', warn.conflicts = FALSE)
+library('dplyr', warn.conflicts = FALSE)
+library('corrplot', warn.conflicts = FALSE)
+library('psych', warn.conflicts = FALSE)
+library('foreach', warn.conflicts = FALSE)
+library('doParallel', warn.conflicts = FALSE)
+# Get this rmd file current absolute path 
+# (from: https://stackoverflow.com/questions/47044068/get-the-path-of-current-script)
+if (rstudioapi::isAvailable()) {
+    wdir <- dirname(getActiveDocumentContext()$path)
+}else{
+    wdir <- getwd()
+}
+tryCatch(expr = {setwd(wdir)}, 
+         error = function(e){print(e)}, 
+         warning = function(w){print(w)})
+```
+
+
+
+## REFERENCES
+
+List of references:
+
+-   Source data [KDD Cup 1999 Data Data Set](https://archive.ics.uci.edu/ml/datasets/kdd+cup+1999+data)
+-   A Detailed [Analysis of the KDD CUP 99 Data Set](https://www.ecb.torontomu.ca/~bagheri/papers/cisda.pdf)
+-   KDD [download archive](https://www.kdd.org/kdd-cup/view/kdd-cup-1999/Data)
+-   Kaggle comunity [notebooks](https://www.kaggle.com/datasets/galaxyh/kdd-cup-1999-data/code) with KDD CUP 99 data set.
+
+
+
+## INITIAL ACTIONS
+
+Based on the references we made some initial changes to the data. 
+
+1. We added a data set with a categorization of the response variable values, the attack types (https://kdd.org/cupfiles/KDDCupData/1999/training_attack_types), having in mind two potential uses as, 
+   - on one side, the model derivation could benefit from having a smaller set of values to target 
+   - and, on the other, we could potentially generate additional response variables considering there could be features relating specifically to some attack types but not others and it could then be easier to derive a specific model having specific response variable to target. 
+
+2. A reference table with for each of the main data set features:
+   - the feature name from the data set header record, 
+   - the data type returned by the R command str(), 
+   - the kddcup.names (http://kdd.org/cupfiles/KDDCupData/1999/kddcup.names) for the statistical type
+   - and a functional description provided by chatGPT.
+
+3. Addition of the following response variables:
+   - <b>AttackCat</b>: "Category type of the attacks: DoS, Probe, Normal, U2R, L2R, Others"
+   - <b>IsAttack</b>: "Boolean flag indicating wether an attack was observed."
+   - <b>IsDosAttack</b>: "Boolean flag indicating wether a DOS attack was observed."
+   - <b>IsProbeAttack</b>: "Boolean flag indicating wether a Probe attack was observed."
+   - <b>IsR2Lattack</b>: "Boolean flag indicating wether a R2L attack was observed."
+   - <b>IsU2Rattack</b>: "Boolean flag indicating wether a U2R attack was observed."
+   - <b>IsOtherAttack</b>: "Boolean flag indicating wether an unclassified (other) attack was observed."
+
+4. We've also add to add parallelism to some portions of the code to process correlations analysis. So if you decide to execute it you should adapt it according to your running host/machine specifications.
+
+
+```{r read_data, include=FALSE}
+readingdataOK <- TRUE
+tryCatch(
+    expr = {
+        # Loading the full dataset
+        data_full <- read_csv("Book1.csv",
+                          col_types = cols(SrcBytes = col_integer(),
+                                           DstBytes = col_integer(), Land = col_integer(),
+                                           WrongFragment = col_integer(), Urgent = col_number(),
+                                           Hot = col_number(), NumFailedLogin = col_integer()))
+        
+        # Loading the training dataset
+        data <- read.csv (file="Book2.csv",header=T)
+        
+        # Loading a reference data set with for each data feature: a name, data type, stastictical type and description
+        features <- read.csv (file="features.csv",header=T)
+        
+        # Loading a data set with a categorization of the response variable: attack types 
+        # (https://kdd.org/cupfiles/KDDCupData/1999/training_attack_types)        
+        attackcats <- read.csv (file="attack_types.csv",header=F, col.names = c("Attack", "Category"))
+        
+        # Addition of response variable features based on the data$Attack values
+        data$AttackCat <- apply(data, 1, function(row){
+            category <- attackcats$Category[attackcats$Attack == row['Attack']]
+            if(row['Attack']=='normal.'){
+                category <- 'normal'
+            }else if (length(category) == 0) {
+                category <- "other"
+            }else if (length(category) > 1) {
+                category <- category[1]
+            }
+            return(category)
+        })
+        features <- rbind(features, c("AttackCat", "chr", "symbolic", "Category type of the attacks: DoS, Probe, Normal, U2R, L2R, Others"))
+
+        data$IsAttack <- apply(data, 1, function(row){
+            isattack <- 0
+            if(row['Attack']!='normal.'){
+                isattack <- 1
+            }
+            return(isattack)
+        })
+        features <- rbind(features, c("IsAttack", "boolean", "symbolic", "Boolean flag indicating wether an attack was observed." ))
+        
+        data$IsDosAttack <- apply(data, 1, function(row){
+            isattack <- 0
+            if(row['AttackCat']!='dos'){
+                isattack <- 1
+            }
+            return(isattack)
+        })
+        features <- rbind(features, c("IsDosAttack", "boolean", "symbolic", "Boolean flag indicating wether a DOS attack was observed." ))
+        
+        data$IsProbeAttack <- apply(data, 1, function(row){
+            isattack <- 0
+            if(row['AttackCat']!='probe'){
+                isattack <- 1
+            }
+            return(isattack)
+        })
+        features <- rbind(features, c("IsProbeAttack", "boolean", "symbolic", "Boolean flag indicating wether a Probe attack was observed." ))
+        
+        data$IsR2Lattack <- apply(data, 1, function(row){
+            isattack <- 0
+            if(row['AttackCat']!='r2l'){
+                isattack <- 1
+            }
+            return(isattack)
+        })
+        features <- rbind(features, c("IsR2Lattack", "boolean", "symbolic", "Boolean flag indicating wether a R2L attack was observed." ))
+        
+        data$IsU2Rattack <- apply(data, 1, function(row){
+            isattack <- 0
+            if(row['AttackCat']!='u2r'){
+                isattack <- 1
+            }
+            return(isattack)
+        })
+        features <- rbind(features, c("IsU2Rattack", "boolean", "symbolic", "Boolean flag indicating wether a U2R attack was observed." ))
+        
+        data$IsOtherAttack <- apply(data, 1, function(row){
+            isattack <- 0
+            if(row['AttackCat']!='other'){
+                isattack <- 1
+            }
+            return(isattack)
+        })
+        features <- rbind(features, c("IsOtherAttack", "boolean", "symbolic", "Boolean flag indicating wether an unclassified (other) attack was observed." ))
+        
+        nfeatures <- nrow(features)
+        
+        knitr::kable(features)
+
+    }, error = function(e){
+        readingdataOK <- FALSE
+        print(e)
+    }, warning = function(w){
+        print(w)
+    }
+)
+```
+
+
+
+## TRYING TO UNDERSTAND CORRELATIONS BETWEEN VARIABLES
+
+To find out correlations between variables, we used the cor() function (based on advice from chatGPT answering the question: <i>"How to find out about correlations between variables?"</i>).
+- The cor(data.frame()) expression calculates correlation coefficients which measure the linear association between columns of a data frame. 
+- The correlation coefficients range from -1 to +1, where -1 indicates a perfect negative linear relationship, +1 indicates a perfect positive linear relationship, and 0 indicates no linear relationship.
+- The resulting correlation matrix is a square matrix where each element represents the correlation between two variables.
+
+ChatGPT help a bit further whith its answers to the question <i>"What minimum Pearson's coefficient value, positive or negative, is required to consider that a relation exists between two variables?"</i>
+1 - "<b>Magnitude of the correlation coefficient:</b> The absolute value of the correlation coefficient (r) indicates the strength of the relationship. Typically, values closer to 1 (either positive or negative) indicate a stronger relationship, while values closer to 0 suggest a weaker relationship. As a rough guideline, correlations with an absolute value above 0.5 or 0.6 are often considered moderate to strong, while those below 0.3 are considered weak."
+2 - "<b>Statistical significance:</b> In addition to the magnitude of the correlation coefficient, it's important to assess statistical significance. The p-value associated with the correlation coefficient indicates whether the observed correlation is statistically significant or could have occurred by chance. Generally, a p-value below a predetermined threshold (e.g., 0.05) is considered statistically significant, indicating a higher confidence in the presence of a true relationship."
+
+For easiness of use we transformed the matrix into another data frame filtering it to get the feature pairs having a Pearson coefficient > 0.3 and a p-value <= 0.05. 
+Before printing it out, the data frame is sorted by the coefficient in descending order and the p-value ascending so that we get the highest correlations at the top and the bottom of the table (negative correlations).
+
+
+```{r raw_correlations}
+corrmatrix <- corr.test(select_if(data, is.numeric))
+corrmatrixvars <- colnames(corrmatrix$r)
+corrs <- data.frame(feature1 = c(), feature2 = c(), coefficient = c(), pvalue = c())
+for(c in 1:ncol(corrmatrix$r)){
+    for(r in c:nrow(corrmatrix$r)){
+        pearsoncoef <- round(corrmatrix$r[r, c], digits = 5)
+        pval <- corrmatrix$p[r, c]
+        if(corrmatrixvars[c] != corrmatrixvars[r] && is.na(pearsoncoef) == FALSE) {
+            if(abs(pearsoncoef) > 0.3 && pval <= 0.05){
+                corrpair <- data.frame(feature1 = corrmatrixvars[c]
+                                        , feature2 = corrmatrixvars[r]
+                                        , coefficient = pearsoncoef
+                                        , pvalue = pval)
+                corrs <- rbind(corrs, corrpair)
+            }
+        }
+    }
+}
+corrs <- corrs[order(desc(corrs$coefficient), corrs$pvalue), ]
+
+knitr::kable(corrs,  row.names = FALSE)
+```
+
+
+
+## EXPLORATION OF THE TRAINING DATASET
+
+
+```{r initial_training_data_exploration}
+ncols <- ncol(data)
+if(ncols != nfeatures){
+    cat(paste("the number of cols on the trainig dataset,", ncols, 
+              "does not match the expected number of features", nfeatures, "."))
+    readingdataOK <- FALSE
+}
+if(readingdataOK)
+{
+    nvars = 42
+    # This part of the code will be redistributed over several CPU's
+    registerDoParallel(cores = 8) # Register the parallel backend & setting the number of cores to utilize
+    results <- list() # Create an empty list to store the results
+    results <- foreach(i = 1:ncols, .combine = c) %dopar% 
+    {
+        current_feature <- features[i,1]
+        if (features[i, 3] == 'symbolic'){
+            current_feature.IsSymbolic = TRUE
+        }else{
+            current_feature.IsSymbolic = FALSE
+        }
+        df <- data.frame(data[ , i], data$Attack, data$AttackCat, data$IsAttack, data$IsDosAttack, data$IsProbeAttack
+                         , data$IsR2Lattack, data$IsU2Rattack, data$IsOtherAttack)
+        colnames(df) <- c(current_feature, 'Attack', 'AttackCat', 'IsAttack', 'IsDosAttack', 'IsProbeAttack'
+                          , 'IsR2Lattack', 'IsU2Rattack', 'IsOtherAttack')
+        minval <- min(df[ , 1])
+        maxval <- max(df[ , 1])
+        nmissingvals <- sum(is.na(df[ , 1])) # 'is.finite()' function is used to identify non-NA and non-NaN values
+        values <- levels(factor(df[ , 1])) # Getting the values
+        values.dis <- data.frame(table(df[ , 1])) # Getting values distribution
+        colnames(values.dis)[1] <- "Vals"
+        colnames(values.dis)[2] <- "Freq"
+        nvals <- nrow(values.dis)
+        values.dis <- values.dis[order(values.dis$Freq, decreasing=TRUE),]
+        
+        #Initialization of the other variables not yet derived
+        values.plot <- c()
+        interquartile <- c() 
+        corrtab <- c()
+        feature.scatterplot <- c() 
+
+        if(minval != maxval){ 
+            # Plotting the distribution of the features
+            if (current_feature.IsSymbolic){
+                if(nvals >= 10){
+                    values.plot <- barplot(values.dis$Freq[1:10], names.arg = values.dis$Vals[1:10], 
+                            xlab = "Values", ylab = "Occurrences", main = current_feature)
+                }else{
+                    values.plot <- barplot(values.dis$Freq, names.arg = values.dis$Vals, 
+                            xlab = "Values", ylab = "Occurrences", main = current_feature)
+                }
+                if( i < nvars){
+                    # Chi-square is used to detect relation between the current feature and the response variables  
+                    corrtab <- data.frame(characteristics = c(), results = c())
+                    for(j in 2:ncol(df)){
+                        chi_square_test <- chisq.test(table(df[ , 1], df[ , j]))
+                        chi_square_test$data.name <- paste(current_feature, '/', colnames(df)[j])
+                        chisquare_row <- data.frame(characteristics = chi_square_test$data.name
+                                                , results = tail(capture.output(chi_square_test), 2))
+                        corrtab <- rbind(corrtab, chisquare_row)                
+                    }
+                }
+            }else{
+                stdev <- sd(df[ , 1])
+                if(stdev != 0){
+                    interquartile <- IQR(df[ , 1])
+                    if(nvals > 4){        
+                        values.plot <- hist(df[ , 1], main = "Feature Histogram", xlab = "Values", ylab = "Occurrences")
+                    }
+                }
+                if( i < nvars){
+                    # Correlations tests are executed in pairs between the current feature and the numeric response vars
+                    for(j in 4:ncol(df)){
+                        corrtab <- data.frame(ResponseVar = c(), Coefficient = c(), P_Value = c()
+                                                 , Interpretation = c())
+                        if(is.numeric(df[,1]) && is.numeric(df[,j])){
+                            paircorr <- cor.test(df[,1], df[,j])
+                            cor_coeff <- paircorr$estimate # Extracting the correlation coefficient
+                            p_value <- paircorr$p.value # Extracting the p-value
+                            # Interpretation
+                            if (abs(cor_coeff) >= 0.7) {
+                              interpretation <- "Strong correlation"
+                            } else if (abs(cor_coeff) >= 0.3) {
+                              interpretation <- "Moderate correlation"
+                            } else {
+                              interpretation <- "Weak correlation"
+                            }
+                            corr_row <- data.frame(ResponseVar = colnames(df)[j]
+                                                    , Coefficient = cor_coeff
+                                                    , P_Value = p_value
+                                                    , Interpretation = interpretation)
+                            corrtab <- rbind(corrtab, corr_row)
+                        }
+                    }
+                }
+            }
+            
+            if( i < nvars){
+                # Scatter plot that could help identify correlations between the current feature and the numeric response vars
+                feature.scatterplot <- pairs(select_if(df, is.numeric))
+            }
+        }
+
+        # Return the results for this iteration
+#        list(current_feature = current_feature, current_feature.IsSymbolic = current_feature.IsSymbolic, df = df
+#             , minval = minval, maxval = maxval, nmissingvals = nmissingvals, nvals = nvals, values.dis = values.dis
+#             , values.plot = values.plot, interquartile = interquartile, corrtab = corrtab, feature.scatterplot = feature.scatterplot)     
+        # Store the results in a list
+        result <- list()
+        result$i <- i
+        result$current_feature <- current_feature
+        result$plot <- plot
+        result$current_feature.IsSymbolic <- current_feature.IsSymbolic
+        result$df <- df
+        result$minval <- minval
+        result$maxval <- maxval
+        result$nmissingvals <- nmissingvals
+        result$nvals <- nvals
+        result$values.dis <- values.dis
+        result$values.plot <- values.plot
+        result$interquartile <- interquartile
+        result$corrtab <- corrtab
+        result$feature.scatterplot <- feature.scatterplot
+        
+        # Returning the results for this iteration
+        result        
+    }
+    
+    # Unregistering the parallel backend
+    stopImplicitCluster()
+    
+    # Now outputting the results
+    for(i in 1:length(results)){
+        cat(paste('----------------------------\nDetails of feature', i, '[', results[[i]]$current_feature, ']:\n'), fill = TRUE)
+        cat(paste('   Data type:', features[i, 2]), fill = TRUE)
+        cat(paste('   Statistical type:', features[i, 3]), fill = TRUE)
+        cat(paste('   Field Description:', features[i, 4], '\n'), fill = TRUE)
+        cat(paste('   -> Number of Missing values:', results[[i]]$nmissingvals), fill = TRUE)
+        cat(paste('   -> Value Minimum:[', results[[i]]$minval, '], Value Maximum:[', results[[i]]$maxval, ']\n'), fill = TRUE)
+        if(results[[i]]$minval == results[[i]]$maxval){ 
+            print('      Both minimum and maximum values are the same! The feature can potentially be discarded.\n')
+        }else {
+            if(results[[i]]$nvals >= 30){
+                print(results[[i]]$values.dis[1:30,], row.names = FALSE)
+                cat(paste("\n... [", (results[[i]]$nvals-30), "more]" ), fill = TRUE)
+            }else{
+                print(results[[i]]$values.dis, row.names = FALSE)
+            }
+            
+            # Plotting the distribution of the features
+            if(results[[i]]$current_feature.IsSymbolic){
+                print(results[[i]]$values.plot)
+                if(i < nvars){
+                    print(paste('   -> Chi-Square test between', results[[i]]$current_feature
+                                , 'and the response variables.'), row.names = FALSE)
+                    print(results[[i]]$corrtab, row.names = FALSE)
+                }
+            }else{
+                stdev <- sd(df[ , 1])
+                if(results[[i]]$stdev == 0){
+                    print('   Standard Deviation is 0 for the feauture. It does not represent statistical interest.')
+                }else{
+                    cat(paste('   -> Interquartile difference:[', results[[i]]$interquartile, ']'), fill = TRUE)
+                    if(interquartile == 0){print('      Requires looking for skewness!\n', row.names = FALSE)}
+                    print(paste(str(results[[i]]$df[ , 1])), row.names = FALSE)
+                    print(summary(results[[i]]$df[ , 1]), row.names = FALSE)
+                    if(results[[i]]$nvals > 4){        
+                        print(results[[i]]$values.plot)
+                    }
+                    if(i < nvars){
+                        print(paste('   -> Correlation test between', results[[i]]$current_feature
+                                    , 'and the numeric response variables.'), row.names = FALSE)
+                        print(results[[i]]$corrtab, row.names = FALSE)
+                    }                    
+                }
+
+
+                # Scatter plot that could help identify correlations between the current feature and the numeric response vars
+                cat(paste('   -> Scatter plot for', results[[i]]$current_feature, 'and the numeric response variables:'), fill = TRUE)
+                print(results[[i]]$feature.scatterplot)
+            }
+        }
+    }
+}
+```
+

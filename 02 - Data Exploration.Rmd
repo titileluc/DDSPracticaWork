@@ -1,5 +1,5 @@
 ---
-title: "01 - Initial Data Discovery"
+title: "02 - Data Exxploration"
 author: "Humbert Costas, Sergi Puigventos Ventura & Daniel Da Graça"
 date: "`r Sys.Date()`"
 output: html_document
@@ -8,7 +8,7 @@ output: html_document
 ```{r setup, include=FALSE, results='hide'}
 knitr::opts_chunk$set(echo = TRUE)
 # Packages required for the project
-required_packages <- c('rstudioapi', 'fs', 'stringr', 'knitr', 'randomForest', 'readr', 'caret', 'e1071')
+required_packages <- c('rstudioapi', 'fs', 'stringr', 'knitr', 'randomForest', 'readr', 'caret', 'e1071', 'tidyverse', 'ggplot2', 'dplyr', 'corrplot')
 # Installation of all required packages not already installed
 install.packages(setdiff(required_packages, rownames(installed.packages())))
 # Loading required packages
@@ -19,6 +19,10 @@ library('randomForest', warn.conflicts = FALSE)
 library('readr', warn.conflicts = FALSE)
 library('caret', warn.conflicts = FALSE)
 library('e1071', warn.conflicts = FALSE)
+library('tidyverse', warn.conflicts = FALSE)
+library('ggplot2', warn.conflicts = FALSE)
+library('dplyr', warn.conflicts = FALSE)
+library('corrplot', warn.conflicts = FALSE)
 # Get this rmd file current absolute path 
 # (from: https://stackoverflow.com/questions/47044068/get-the-path-of-current-script)
 if (rstudioapi::isAvailable()) {
@@ -31,7 +35,8 @@ tryCatch(expr = {setwd(wdir)},
          warning = function(w){print(w)})
 ```
 
-## REFERENCES:
+
+## REFERENCES
 
 List of references:
 
@@ -39,6 +44,14 @@ List of references:
 -   A Detailed [Analysis of the KDD CUP 99 Data Set](https://www.ecb.torontomu.ca/~bagheri/papers/cisda.pdf)
 -   KDD [download archive](https://www.kdd.org/kdd-cup/view/kdd-cup-1999/Data)
 -   Kaggle comunity [notebooks](https://www.kaggle.com/datasets/galaxyh/kdd-cup-1999-data/code) with KDD CUP 99 data set.
+
+
+## INITIAL ACTIONS
+
+Based on the references we adopt the idea of using of two "reference" or "metadata" files anticpating analysis.
+  1. A dataset with a categorization of the response variable values, the attack types (https://kdd.org/cupfiles/KDDCupData/1999/training_attack_types)
+  2. A reference table with for each of the main data set features: a name, data type, stastictical type and description.
+
 
 ```{r read_data}
 readingdataOK <- TRUE
@@ -53,7 +66,6 @@ tryCatch(
         
         # Loading the training dataset
         data <- read.csv (file="Book2.csv",header=T)
-        ncols <- ncol(data)
         
         # Loading a reference data set with for each data feature: a name, data type, stastictical type and description
         # This info was collected from: 
@@ -64,18 +76,32 @@ tryCatch(
         features <- read.csv (file="features.csv",header=T)
         nfeatures <- nrow(features)
         
-        if(ncols != nfeatures){
-            cat(paste("the number of cols on the trainig dataset,", ncols, 
-                      "does not match the expected number of features", nfeatures, "."))
-            readingdataOK <- FALSE
-        }
-        
         # Loading a data set with a categorization of the response variable: attack types 
         # (https://kdd.org/cupfiles/KDDCupData/1999/training_attack_types)        
-        attackcats <- read.csv (file="attack_types.csv",header=F)
+        attackcats <- read.csv (file="attack_types.csv",header=F, col.names = c("Attack", "Category"))
         
+        # Addition of response variable features based on the data$Attack values
+        data$AttackCat <- apply(data, 1, function(row){
+            category <- attackcats$Category[attackcats$Attack == row['Attack']]
+            if(row['Attack']=='normal.'){
+                category <- 'normal'
+            }else if (length(category) == 0) {
+                category <- "unknown"
+            }else if (length(category) > 1) {
+                category <- category[1]
+            }
+            return(category)
+        })
+        data$IsAttack <- apply(data, 1, function(row){
+            isattack <- 0
+            if(row['Attack']!='normal.'){
+                isattack <- 1
+            }
+            return(isattack)
+        })
+            
         knitr::kable(features)
-        
+
     }, error = function(e){
         readingdataOK <- FALSE
         print(e)
@@ -85,42 +111,112 @@ tryCatch(
 )
 ```
 
+## Trying to understand correlations between variables
+
+To find out correlations between variables, we used the cor() function (based on advice from chatGPT answering the question: <i>"How to find out about correlations between variables?"</i>).
+  - The cor(data.frame()) expression calculates correlation coefficients which measure the linear association between columns of a data frame. 
+  - The correlation coefficients range from -1 to +1, where -1 indicates a perfect negative linear relationship, +1 indicates a perfect positive linear relationship, and 0 indicates no linear relationship.
+  - The resulting correlation matrix is a square matrix where each element represents the correlation between two variables.
+  - For easiness of use we transformed the matrix into another data frame which we then order to get the highest correlations.
+
+```{r raw_correlations}
+corrmatrix <- cor(select_if(data, is.numeric))
+corrmatrixcols <- colnames(corr_matrix)
+corrmatrixrows <- rownames(corr_matrix)
+corrs <- data.frame(feature1 = c(), feature2 = c(), coefficient = c())
+for(c in 1:ncol(corrmatrix)){
+    for(r in c:nrow(corrmatrix)){
+        if(corrmatrixcols[c] != corrmatrixrows[r]){
+            corrs <- rbind(corrs
+                           , data.frame(feature1 = corrmatrixcols[c]
+                                        , feature2 = corrmatrixrows[r]
+                                        , coefficient = round(corrmatrix[r, c], digits = 5)))
+        }
+    }
+}
+corrs <- corrs[order(desc(corrs$coefficient)), ]
+
+knitr::kable(corrs)
+```
 
 ## Exploration of the training dataset
 
-```{r initial_training_data_exploration}
+```{r data_exploration}
+ncols <- ncol(data)
+if(ncols != nfeatures){
+    cat(paste("the number of cols on the trainig dataset,", ncols, 
+              "does not match the expected number of features", nfeatures, "."))
+    readingdataOK <- FALSE
+}
 if(readingdataOK)
 {
+    respvarAttack <- data[, 42]
+    respvarAttackcat <- data[, 43]
+    respvarIsAttack <- data[, 44]
     for(i in 1:ncols) {
-        col <- data[ , i]
+        df <- data.frame(data[ , i], data$Attack, data$AttackCat, data$IsAttack)
+        colnames(df) <- c(features[i,1], 'Attack', 'AttackCat', 'IsAttack')
+        minval <- min(df[ , 1])
+        maxval <- max(df[ , 1])
         cat(paste('----------------------------\nDetails of feature', i, '[', features[i,1], ']:\n'), fill = TRUE)
         cat(paste('   Data type:', features[i, 2]), fill = TRUE)
         cat(paste('   Statistical type:', features[i, 3]), fill = TRUE)
         cat(paste('   Field Description:', features[i, 4], '\n'), fill = TRUE)
-        nmissingvals <- sum(is.na(col)) # 'is.finite()' function is used to identify non-NA and non-NaN values
-        cat(paste('   Number of Missing values:', nmissingvals, '\n\n'))
-        if (features[i, 3] == 'symbolic'){
-            values <- levels(factor(col)) # Getting the values
-            values.dis <- data.frame(table(col)) # Getting values distribution
-            colnames(values.dis)[1] <- "Vals"
-            colnames(values.dis)[2] <- "Freq"
-            nvals <- nrow(values.dis)
-            values.dis <- values.dis[order(values.dis$Freq, decreasing=TRUE),]
-            if(nvals >= 30){
-                print(values.dis[1:30,], row.names = FALSE)
-                cat(paste("\n... [", (nvals-30), "more]" ), fill = TRUE)
-                barplot(values.dis$Freq[1:15], names.arg = values.dis$Vals[1:15], 
-                        xlab = "Values", ylab = "Occurrences", main = features[i,1])
+        nmissingvals <- sum(is.na(df[ , 1])) # 'is.finite()' function is used to identify non-NA and non-NaN values
+        cat(paste('   Number of Missing values:', nmissingvals, '\n\n'), fill = TRUE)
+        if(minval == maxval){ 
+            print('Both minimum and maximum values are the same!')            
+        }else {
+            cat(paste('   Value Minimum:[', minval, '], Value Maximum:[', maxval, ']'), fill = TRUE)
+            if (features[i, 3] == 'symbolic'){
+                values <- levels(factor(df[ , 1])) # Getting the values
+                values.dis <- data.frame(table(df[ , 1])) # Getting values distribution
+                colnames(values.dis)[1] <- "Vals"
+                colnames(values.dis)[2] <- "Freq"
+                nvals <- nrow(values.dis)
+                values.dis <- values.dis[order(values.dis$Freq, decreasing=TRUE),]
+                if(nvals >= 30){
+                    print(values.dis[1:30,], row.names = FALSE)
+                    cat(paste("\n... [", (nvals-30), "more]" ), fill = TRUE)
+                    barplot(values.dis$Freq[1:15], names.arg = values.dis$Vals[1:15], 
+                            xlab = "Values", ylab = "Occurrences", main = features[i,1])
+                }else{
+                    print(values.dis, row.names = FALSE)
+                    barplot(values.dis$Freq, names.arg = values.dis$Vals, 
+                            xlab = "Values", ylab = "Occurrences", main = features[i,1])
+                }
             }else{
-                print(values.dis, row.names = FALSE)
-                barplot(values.dis$Freq, names.arg = values.dis$Vals, 
-                        xlab = "Values", ylab = "Occurrences", main = features[i,1])
+                colmean <- mean(df[ , 1])
+                stdev <- sd(df[ , 1])
+                if(stdev == 0){
+                    print('   Standard Deviation is 0 for the feauture.')
+                }else{
+                    interquartile <- IQR(df[ , 1])
+                    cat(paste('   Interquartile difference:[', interquartile, ']'), fill = TRUE)
+                    if(interquartile == 0){print('      Requires looking for skewness.')}
+                    
+                    corr_matrix <- cor(select_if(df, is.numeric)) 
+                    print(corr_matrix)
+                    plot <- corrplot(corr_matrix, method = 'number') # colorful number
+                    print(plot)
+
+                    print(str(df[ , 1]))
+                    colsummary <- summary(df[ , 1]) 
+                    print(colsummary)
+                    hist(df[ , 1])
+                }
             }
-        }else{
-            print(str(col))
-            colsummary <- summary(col) 
-            print(colsummary)
-            boxplot(col, na.rm = TRUE)
+            if( i < 42){
+                cat(paste('Scatter plot for', features[i,1], 'vs. Attack:'), fill = TRUE)
+                plot <- ggplot(data = df) + geom_point(mapping = aes(x = df[ , 1], y = Attack))
+                print(plot)
+                cat(paste('Scatter plot for', features[i,1], 'vs. Attack Categories:'), fill = TRUE)
+                plot <- ggplot(data = df) + geom_point(mapping = aes(x = df[ , 1], y = AttackCat))
+                print(plot)
+                cat(paste('Scatter plot for', features[i,1], 'vs. Is Attack Indicator:'), fill = TRUE)
+                plot <- ggplot(data = df) + geom_point(mapping = aes(x = df[ , 1], y = IsAttack))
+                print(plot)
+            }
         }
     }
 }
