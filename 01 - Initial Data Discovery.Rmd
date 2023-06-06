@@ -234,7 +234,8 @@ if(readingdataOK)
                           , 'IsR2Lattack', 'IsU2Rattack', 'IsOtherAttack')
         minval <- min(df[ , 1])
         maxval <- max(df[ , 1])
-        cat(paste('----------------------------\nDetails of feature', i, '[', features[i,1], ']:\n'), fill = TRUE)
+        cat(paste('------------------------------------------------------------------------------------\n'
+                  , 'Details of feature', i, '[', features[i,1], ']:\n'), fill = TRUE)
         cat(paste('   Data type:', features[i, 2]), fill = TRUE)
         cat(paste('   Statistical type:', features[i, 3]), fill = TRUE)
         cat(paste('   Field Description:', features[i, 4], '\n'), fill = TRUE)
@@ -307,6 +308,8 @@ if(readingdataOK)
                     }
                     cat(paste('\n   -> Chi-Square test between', current_feature, 'and the response variables.'), fill = TRUE)
                     print(chisquare, row.names = FALSE)
+                    cat('\n      To have evidence of association between the features, we need the P-Values > 0 and <= 0.05\n'
+                        , fill = TRUE)
                     #knitr::kable(chisquare,  row.names = FALSE)
                 }else{
                     # Correlations tests are executed in pairs between the current feature and the numeric response vars
@@ -318,9 +321,9 @@ if(readingdataOK)
                             cor_coeff <- paircorr$estimate # Extracting the correlation coefficient
                             p_value <- paircorr$p.value # Extracting the p-value
                             # Interpretation
-                            if (abs(cor_coeff) >= 0.7) {
+                            if (abs(cor_coeff) >= 0.7 && p_value <= 0.05 && p_value > 0) {
                                 interpretation <- "Strong correlation"
-                            } else if (abs(cor_coeff) >= 0.3) {
+                            } else if (abs(cor_coeff) >= 0.3 && p_value <= 0.05 && p_value > 0) {
                                 interpretation <- "Moderate correlation"
                             } else {
                                 interpretation <- "Weak correlation"
@@ -335,9 +338,11 @@ if(readingdataOK)
                     cat(paste('\n   -> Correlation test between', current_feature
                                 , 'and the numeric response variables.'), fill = TRUE)
                     print(paircorrdf, row.names = FALSE)
+                    cat(paste('\n      To assume association between the features, we need a Pearson coefficient'
+                        ,' >= 0.3 for a moderate correlation, >= 0.7 for a strong one and always with the P-Values > 0',
+                        'and <= 0.05\n'), fill = TRUE)
                     #knitr::kable(paircorrdf,  row.names = FALSE)
                 }
-
                 # Scatter plot that could help identify correlations between the current feature and the numeric response vars
                 #cat(paste('   -> Scatter plot for', current_feature, 'and the numeric response variables:'), fill = TRUE)
                 #pairs(select_if(df, is.numeric))
