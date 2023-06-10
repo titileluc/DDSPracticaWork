@@ -207,7 +207,12 @@ tryCatch(
             }
             readingdataOK <- FALSE
         }
-        
+
+        # Writing out the features amended set, just to keep a trace of it
+        write.csv (features, file=file.path(wdir, "features(2).csv", fsep = .Platform$file.sep), append = FALSE
+                   , quote = TRUE, sep = "|", eol = "\n", na = "NA", dec = ".", row.names = FALSE, col.names = TRUE
+                   , qmethod = c("escape", "double"), fileEncoding = "utf-8")
+file.info(file.path(wdir, "features(2).csv"))
         knitr::kable(features)
 
     }, error = function(e){
@@ -221,16 +226,15 @@ tryCatch(
 
 
 
-
-
 ## EXPLORATION OF THE TRAINING DATASET
 
 With this section, the intention is to try to automate "a first glimpse" of the data .
 
 In summary what it does is looping through all the dataset features in order to identify for each one:
-- if it holds missing values and how many,
-- basic statistics for quantitative numeric variables,
-- and the distribution of values of the feature.
+
+   * if it holds missing values and how many,
+   * basic statistics for quantitative numeric variables,
+   * and the distribution of values of the feature.
 
 
 
