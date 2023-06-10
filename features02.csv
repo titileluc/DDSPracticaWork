@@ -1,0 +1,45 @@
+Feature,DataType,StatType,Description
+Duration,int,continuous,The duration of the connection in seconds. It represents the length of time the connection lasted.
+ProtocolType,chr,symbolic,"The protocol type of the network connection, such as TCP, UDP, ICMP, etc. It indicates the communication protocol used in the connection."
+Service,chr,symbolic,"The specific service or application associated with the network connection, such as http, ftp, smtp, etc. It represents the service or application layer protocol running on top of the network protocol."
+Flag,chr,symbolic,"Represents the status of the connection, indicating whether it is normal or if specific flags are set in the network packets. It provides information about the connection status, such as whether it is established, closed, or has certain flags set."
+SrcBytes,int,continuous,The number of data bytes transferred from source to destination. They indicate the amount of data transferred between the source and destination hosts.
+DstBytes,int,continuous,The number of data bytes transferred from destination to source. They indicate the amount of data transferred between the destination and source hosts.
+Land,int,symbolic,"Indicates whether the connection is from/to the same host/port (land attack). It is a binary field that indicates if the connection is a ""land"" attack, where the source and destination IP addresses and ports are the same."
+WrongFragment,int,continuous,The number of "wrong" fragments received or sent. It represents the count of improperly formed or malformed IP fragments.
+Urgent,int,symbolic,The number of urgent packets. It indicates the number of packets with the urgent bit set.
+Hot,int,continuous,"Indicates whether the login belongs to a ""hot"" list, which is a list of hosts that are considered potentially vulnerable or suspicious."
+NumFailedLogin,int,symbolic,The number of failed login attempts. It represents the count of failed login attempts in the session.
+LoggedIn,int,symbolic,Indicates whether the login was successfully performed. It is a binary field that indicates if the login was successful or not.
+NumCompromised,int,continuous,The number of compromised conditions. It represents the count of compromised conditions in the session.
+RootShell,int,symbolic,Indicates whether the root shell was obtained. It is a binary field that indicates if the root shell was obtained in the session.
+SuAttempted,int,symbolic,Indicates whether the "su" command was attempted. It is a binary field that indicates if the "su" command was attempted in the session.
+NumRoot,int,continuous,The number of root accesses. It represents the count of root accesses in the session.
+NumFile,int,continuous,The number of file creations. It represents the count of file creations in the session.
+NumShells,int,symbolic,The number of shell prompts. It represents the count of shell prompts in the session.
+NumAccessFiles,int,symbolic,The number of access control files. It represents the count of access control files in the session.
+NumOutboundCmds,int,continuous,The number of outbound commands. It represents the count of outbound commands in the session.
+IsHostLogin,int,symbolic,"Indicates whether the login is a host login, which is a login attempt where the source of the login is a host machine, as opposed to a user login where the source is a specific user. It has a value of 1 if the login is a host login and 0 otherwise."
+IsGuestLogin,int,symbolic,Indicates if the login is a guest login. It is a binary field that indicates if the login is a guest login.
+Count,int,continuous,Represents the number of connections to the same host in the past two seconds. It indicates the count of connections to the same destination host within a specific time window.
+SrvCount,int,continuous,The number of connections to the same service in the past two seconds. It represents the count of connections to the same service within a specific time window.
+SerrorRate,num,continuous,The percentage of connections that have "SYN" errors. It is the ratio of connections with "SYN" errors to the total number of connections.
+SrvSerrorRate,num,continuous,The percentage of connections to the same service that have "SYN" errors. It is the ratio of connections with "SYN" errors to the total number of connections to the same service.
+RerrorRate,num,continuous,The percentage of connections that have "REJ" errors. It is the ratio of connections with "REJ" errors to the total number of connections.
+SrvRerrorRate,num,continuous,The percentage of connections to the same service that have "REJ" errors. It is the ratio of connections with "REJ" errors to the total number of connections to the same service.
+SameSrvRate,num,continuous,The percentage of connections to the same service. It represents the ratio of connections to the same service to the total number of connections.
+DiffSrvRate,num,continuous,The percentage of connections to different services. It indicates the ratio of connections to different services to the total number of connections.
+SrvDiffHostRate,num,continuous,The percentage of connections to different hosts for the same service. It is the ratio of connections to different hosts for the same service to the total number of connections to the same service.
+DstHostCount,int,continuous,The number of connections to the same destination host. It represents the count of connections to the same destination host.
+DstHostSrvCount,int,continuous,The number of connections to the same service on the destination host. It indicates the count of connections to the same service on the destination host.
+DstHostSameSrvRate,num,continuous,The percentage of connections to the same service on the destination host. It is the ratio of connections to the same service on the destination host to the total number of connections to the destination host.
+DstHostDiffSrvRate,num,continuous,The percentage of connections to different services on the destination host. It represents the ratio of connections to different services on the destination host to the total number of connections to the destination host.
+DstHostSameSrcPortRate,num,continuous,The percentage of connections from the same source port to the destination host. It is the ratio of connections from the same source port to the destination host to the total number of connections to the destination host.
+DstHostSrvDiffHostRate,num,continuous,The percentage of connections to the same service on different hosts. It indicates the ratio of connections to the same service on different hosts to the total number of connections to the same service.
+DstHostSerrorRate,num,continuous,The percentage of connections to the destination host that have "SYN" errors. It represents the ratio of connections with "SYN" errors to the total number of connections to the destination host.
+DstHostSrvSerrorRate,num,continuous,The percentage of connections to the same service on the destination host that have "SYN" errors. It is the ratio of connections with "SYN" errors to the total number of connections to the same service on the destination host.
+DstHostRerrorRate,num,continuous,The percentage of connections to the destination host that have "REJ" errors. It represents the ratio of connections with "REJ" errors to the total number of connections to the destination host.
+DstHostSrvRerrorRate,num,continuous,The percentage of connections to the same service on the destination host that have "REJ" errors. It represents the ratio of connections with "REJ" errors to the total number of connections to the same service on the destination host.
+Attack,chr,symbolic,Response variable with a value for each type of attack and the value "normal." when no attack was suffered for the case.
+AttackCat,chr,symbolic,Response variable with a value for each category of attack and the value "normal." when no attack was suffered for the case.
+IsAttack,boolean,symbolic,"Response variable with the value '1' when the case suffered an attack and '0' when not, also corresponding to when the Attack feature equals ""normal.""."
