@@ -1,16 +1,20 @@
 ---
 title: "IDSml"
-author: "Humbert Costas, Sergi Puigventos Ventura & Daniel Da Graça"
+author: "Humbert Costas"
 date: "`r Sys.Date()`"
 output: html_document
 ---
 
 ```{r setup, include=FALSE, results='hide'}
 knitr::opts_chunk$set(echo = TRUE)
+
 # Packages required for the project
-required_packages <- c('rstudioapi', 'fs', 'stringr', 'knitr', 'randomForest', 'readr', 'caret', 'e1071')
+required_packages <- c('rstudioapi', 'fs', 'stringr', 'knitr', 'randomForest', 'readr', 'caret', 'e1071', 'tidyverse'
+                       , 'ggplot2', 'dplyr', 'corrplot', 'psych', 'vcd', 'magrittr')
+
 # Installation of all required packages not already installed
 install.packages(setdiff(required_packages, rownames(installed.packages())))
+
 # Loading required packages
 library('rstudioapi', warn.conflicts = FALSE)
 library('fs', warn.conflicts = FALSE)
@@ -19,6 +23,14 @@ library('randomForest', warn.conflicts = FALSE)
 library('readr', warn.conflicts = FALSE)
 library('caret', warn.conflicts = FALSE)
 library('e1071', warn.conflicts = FALSE)
+library('tidyverse', warn.conflicts = FALSE)
+library('ggplot2', warn.conflicts = FALSE)
+library('dplyr', warn.conflicts = FALSE)
+library('corrplot', warn.conflicts = FALSE)
+library('psych', warn.conflicts = FALSE)
+library('vcd', warn.conflicts = FALSE)
+library("magrittr", warn.conflicts = FALSE)
+
 # Get this rmd file current absolute path 
 # (from: https://stackoverflow.com/questions/47044068/get-the-path-of-current-script)
 if (rstudioapi::isAvailable()) {
@@ -34,94 +46,23 @@ tryCatch(expr = {setwd(wdir)},
 ## REFERENCES:
 
 List of references:
+  
+  - Source data [KDD Cup 1999 Data Data Set](https://archive.ics.uci.edu/ml/datasets/kdd+cup+1999+data)
+  - A Detailed [Analysis of the KDD CUP 99 Data Set](https://www.ecb.torontomu.ca/~bagheri/papers/cisda.pdf)
+  - KDD [download archive](https://www.kdd.org/kdd-cup/view/kdd-cup-1999/Data)
+  - Kaggle comunity [notebooks](https://www.kaggle.com/datasets/galaxyh/kdd-cup-1999-data/code) with KDD CUP 99 data set.
+  
 
--   Source data [KDD Cup 1999 Data Data Set](https://archive.ics.uci.edu/ml/datasets/kdd+cup+1999+data)
--   A Detailed [Analysis of the KDD CUP 99 Data Set](https://www.ecb.torontomu.ca/~bagheri/papers/cisda.pdf)
--   KDD [download archive](https://www.kdd.org/kdd-cup/view/kdd-cup-1999/Data)
--   Kaggle comunity [notebooks](https://www.kaggle.com/datasets/galaxyh/kdd-cup-1999-data/code) with KDD CUP 99 data set.
 
 ```{r read_data}
-readingdataOK <- TRUE
-tryCatch(
-    expr = {
-        # Loading the full dataset
-        data_full <- read_csv("Book1.csv",
-                          col_types = cols(SrcBytes = col_integer(),
-                                           DstBytes = col_integer(), Land = col_integer(),
-                                           WrongFragment = col_integer(), Urgent = col_number(),
-                                           Hot = col_number(), NumFailedLogin = col_integer()))
-        
-        # Loading the training dataset
-        data <- read.csv (file="Book2.csv",header=T)
-        ncols <- ncol(data)
-        
-        # Loading a reference data set with for each data feature: a name, data type, stastictical type and description
-        # This info was collected from: 
-        # - the header record for the name, 
-        # - the R command str(data) for the data type, 
-        # - the kddcup.names (http://kdd.org/cupfiles/KDDCupData/1999/kddcup.names) for the statistical type
-        # - and asking chatgpt for a brief functional description for each field
-        features <- read.csv (file="features.csv",header=T)
-        nfeatures <- nrow(features)
-        
-        if(ncols != nfeatures){
-            cat(paste("the number of cols on the trainig dataset,", ncols, 
-                      "does not match the expected number of features", nfeatures, "."))
-            readingdataOK <- FALSE
-        }
-        
-        # Loading a data set with a categorization of the response variable: attack types 
-        # (https://kdd.org/cupfiles/KDDCupData/1999/training_attack_types)        
-        attackcats <- read.csv (file="attack_types.csv",header=F)
-        
-        knitr::kable(features)
-        
-    }, error = function(e){
-        readingdataOK <- FALSE
-        print(e)
-    }, warning = function(w){
-        print(w)
-    }
-)
-```
+data_full <- read_csv("Book1.csv",
+                  col_types = cols(SrcBytes = col_integer(),
+                                   DstBytes = col_integer(), Land = col_integer(),
+                                   WrongFragment = col_integer(), Urgent = col_number(),
+                                   Hot = col_number(), NumFailedLogin = col_integer()))
 
-## Exploration of the training dataset
+data <- read.csv (file="Book2.csv",header=T)
 
-```{r initial_training_data_exploration}
-if(readingdataOK)
-{
-    for(i in 1:ncols) {
-        col <- data[ , i]
-        cat(paste('----------------------------\nDetails of feature', i, '[', features[i,1], ']:\n'), fill = TRUE)
-        cat(paste('   Data type:', features[i, 2]), fill = TRUE)
-        cat(paste('   Statistical type:', features[i, 3]), fill = TRUE)
-        cat(paste('   Field Description:', features[i, 4], '\n'), fill = TRUE)
-        nmissingvals <- sum(is.na(col)) # 'is.finite()' function is used to identify non-NA and non-NaN values
-        cat(paste('   Number of Missing values:', nmissingvals, '\n\n'))
-        if (features[i, 3] == 'symbolic'){
-            values <- levels(factor(col)) # Getting the values
-            values.dis <- data.frame(table(col)) # Getting values distribution
-            colnames(values.dis)[1] <- "Vals"
-            colnames(values.dis)[2] <- "Freq"
-            nvals <- nrow(values.dis)
-            values.dis <- values.dis[order(values.dis$Freq, decreasing=TRUE),]
-            if(nvals >= 30){
-                print(values.dis[1:30,], row.names = FALSE)
-                cat(paste("\n... [", (nvals-30), "more]" ), fill = TRUE)
-                barplot(values.dis$Freq[1:15], names.arg = values.dis$Vals[1:15], 
-                        xlab = "Values", ylab = "Occurrences", main = features[i,1])
-            }else{
-                print(values.dis, row.names = FALSE)
-                barplot(values.dis$Freq, names.arg = values.dis$Vals, 
-                        xlab = "Values", ylab = "Occurrences", main = features[i,1])
-            }
-        }else{
-            colsummary <- summary(col) 
-            print(colsummary)
-            boxplot(col, na.rm = TRUE)
-        }
-    }
-}
 ```
 
 ## Including Plots
@@ -129,7 +70,48 @@ if(readingdataOK)
 You can also embed plots, for example:
 
 ```{r feature_selection, echo=FALSE}
-data1 <- data[,c("SrcBytes", "DstBytes", "Land", "WrongFragment", "Urgent", "SameSrvRate", "LoggedIn",  "DstHostSameSrvRate", "DstHostSrvCount","Flag","Attack" )]
+#data1 <- data[,c("SrcBytes", "DstBytes", "Land", "WrongFragment", "Urgent", "SameSrvRate", "LoggedIn",  "DstHostSameSrvRate", "DstHostSrvCount","Flag","Attack" )]
+# Resultados del modelo original:
+## FALSE  TRUE 
+##  1787 67755
+
+# Intento 01 - Simplemente substituyendo las variables provistas en el modelo orginal por las que se habían identificado como teniendo más correlación con la respuesta "Attack"
+# Resultados peores que el modelo original:
+## FALSE  TRUE 
+## 12037 57505 
+#data1 <- data[,c("Land", "LoggedIn", "ProtocolType", "NumShells", "IsGuestLogin", "RootShell",  "Urgent", "Flag", "IsHostLogin", "NumFailedLogin", "Service", "Attack")]
+
+# Intento 02 - Substituyendo las variables provistas en el modelo orginal por las que se han identificado como teniendo la mayor correlación con las variables respuestas derivadas desde "Attack".
+# Resultados peores que con el modelo original pero mejores que los del intento 01.
+## FALSE  TRUE 
+##  2743 66799
+#data1 <- data[,c("Land", "LoggedIn", "Service", "Flag", "SameSrvRate", "DiffSrvRate", "DstHostDiffSrvRate", "RootShell",  "Duration", "Attack")]
+
+# Intento 03 - Substituyendo las variables provistas en el modelo orginal por las que se han identificado como teniendo la mayor correlación con las variables respuestas derivadas desde "Attack" y con las que tienen buena relación con la variable genérica "IsAttack".
+# Resultados peores que con el modelo original pero mejores que los del intento 01 y 02.
+## FALSE  TRUE 
+##  1973 67569
+#data1 <- data[,c("Land", "Service", "LoggedIn", "Flag", "SameSrvRate", "DiffSrvRate", "DstHostDiffSrvRate", "RootShell",  "Duration", "DstHostRerrorRate", "Count", "Attack")]
+
+# Intento 04 - Substituyendo las variables provistas en el modelo orginal por las que se han identificado como teniendo una correlación con las variables respuestas derivadas desde "Attack" con un coefficiente >= 0.6 y manteniendo las del intento 03.
+# Resultados mejores que con el modelo original.
+## FALSE  TRUE 
+##  1235 68307
+#data1 <- data[,c("Land", "Service", "LoggedIn", "Flag", "SameSrvRate", "DiffSrvRate", "DstHostDiffSrvRate", "RootShell",  "Duration", "DstHostRerrorRate", "Count", "Attack")]
+
+# Intento 05 - Se conservan las mismas variables que en el intento 05 pero se le añade una nueva, TotalBytes = SrcBytes + DstBytes.
+# Resultados mejores que con el modelo original y del intento 04.
+## FALSE  TRUE 
+##   806 68736
+data <- data %>% mutate(TotalBytes = SrcBytes + DstBytes)
+#data1 <- data[,c("TotalBytes", "Land", "Service", "LoggedIn", "Flag", "SameSrvRate", "DiffSrvRate", "DstHostDiffSrvRate", "RootShell",  "Duration", "DstHostRerrorRate", "Count", "DstHostSameSrvRate", "DstHostSrvCount", "ProtocolType", "NumShells", "IsGuestLogin", "Attack")]
+
+# Intento 07 - Se conservan las mismas variables que en el intento 06 pero se le añade las que no tenía y tienen un coeficiente de correlación >= 0.5 con las variables respuestas.
+# Resultados peores que con el modelo del intento 05.
+## FALSE  TRUE 
+##   885 68657
+data1 <- data[,c("TotalBytes", "Land", "Service", "LoggedIn", "Flag", "SameSrvRate", "DiffSrvRate", "DstHostDiffSrvRate", "RootShell",  "Duration", "DstHostRerrorRate", "Count", "DstHostSameSrvRate", "DstHostSrvCount", "ProtocolType", "NumShells", "IsGuestLogin", "RootShell", "Urgent", "Attack")]
+
 # data1 <- data[,c(4:12)]
 data1$Attack <- as.factor(data1$Attack)
 ```
@@ -145,11 +127,13 @@ dim <-nrow (training)
 dim(training)
 ```
 
+
 ```{r train_random_forest, echo=FALSE}
 output.forest <- randomForest(Attack ~ ., data = training)
 print(output.forest)
 plot(output.forest)
 ```
+
 
 ```{r predict, echo=FALSE}
 pred <- predict(output.forest,testing)
