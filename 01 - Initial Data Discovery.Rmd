@@ -529,7 +529,7 @@ corrs <- corrs[order(desc(corrs$coefficient), corrs$pvalue), 1:7]
 Identification of the variables correlated with the 'Attack' response variable with a value for each type of attack and the value "normal." when no attack was suffered for the case.
 </b>
 
-```{r identifying_Attack_correlations, cache=TRUE}
+```{r identifying_Attack_correlations, cache=TRUE, echo=FALSE}
 knitr::kable(corrs[(corrs$feature1 == 'Attack' | corrs$feature2 == 'Attack')
                    & corrs$toIgnore != 'Yes',][1:5],  row.names = FALSE)
 ```
@@ -539,7 +539,7 @@ knitr::kable(corrs[(corrs$feature1 == 'Attack' | corrs$feature2 == 'Attack')
 Identification of the variables correlated with the 'AttackCat' response variable with a value for each category of attack and the value "normal." when no attack was suffered for the case.
 </b>
 
-```{r identifying_AttackCat_correlations, cache=TRUE}
+```{r identifying_AttackCat_correlations, cache=TRUE, echo=FALSE}
 knitr::kable(corrs[(corrs$feature1 == 'AttackCat' | corrs$feature2 == 'AttackCat')
                    & corrs$toIgnore != 'Yes',][1:5],  row.names = FALSE)
 ```
@@ -549,7 +549,7 @@ knitr::kable(corrs[(corrs$feature1 == 'AttackCat' | corrs$feature2 == 'AttackCat
 Identification of the variables correlated with the <i><b>generic</b></i> 'IsAttack' Boolean flag indicating whether an attack was observed.
 </b>
 
-```{r identifying_IsAttack_correlations, cache=TRUE}
+```{r identifying_IsAttack_correlations, cache=TRUE, echo=FALSE}
 knitr::kable(corrs[(corrs$feature1 == 'IsAttack' | corrs$feature2 == 'IsAttack')
                    & corrs$toIgnore != 'Yes',][1:5],  row.names = FALSE)
 ```
@@ -560,7 +560,7 @@ Identification of the variables correlated with the generic 'IsDosAttack' Boolea
 </b>
 DOS (Denial of Service): Denial of Service attacks aim to disrupt the availability of a system or network by overwhelming it with a flood of requests or malicious traffic. The goal is to render the target system unresponsive or slow down its performance.
 
-```{r identifying_IsDosAttack_correlations, cache=TRUE}
+```{r identifying_IsDosAttack_correlations, cache=TRUE, echo=FALSE}
 knitr::kable(corrs[(corrs$feature1 == 'IsDosAttack' | corrs$feature2 == 'IsDosAttack')
                    & corrs$toIgnore != 'Yes',][1:5],  row.names = FALSE)
 ```
@@ -571,7 +571,7 @@ Identification of the variables correlated with the generic 'IsProbeAttack' Bool
 </b>
 PROBE: Probe attacks involve attempts to gather information about a target system or network. The attacker scans the target for open ports, vulnerabilities, or weaknesses to gather intelligence that can be used in subsequent attacks.
 
-```{r identifying_IsProbeAttack_correlations, cache=TRUE}
+```{r identifying_IsProbeAttack_correlations, cache=TRUE, echo=FALSE}
 knitr::kable(corrs[(corrs$feature1 == 'IsProbeAttack' | corrs$feature2 == 'IsProbeAttack')
                    & corrs$toIgnore != 'Yes',][1:5],  row.names = FALSE)
 ```
@@ -582,7 +582,7 @@ Identification of the variables correlated with the generic 'IsR2LAttack' Boolea
 </b>
 R2L (Remote to Local): R2L attacks involve unauthorized access attempts to a local system from a remote location. Attackers exploit vulnerabilities in the network or system to gain access without proper authorization.
 
-```{r identifying_IsR2LAttack_correlations, cache=TRUE}
+```{r identifying_IsR2LAttack_correlations, cache=TRUE, echo=FALSE}
 knitr::kable(corrs[(corrs$feature1 == 'IsR2LAttack' | corrs$feature2 == 'IsR2Lattack')
                    & corrs$toIgnore != 'Yes',][1:5],  row.names = FALSE)
 ```
@@ -593,7 +593,7 @@ Identification of the variables correlated with the generic 'IsU2RAttack' Boolea
 </b>
 U2R (User to Root): U2R attacks occur when a regular user attempts to gain root or administrative privileges on a system. The attacker exploits vulnerabilities in the system to elevate their privileges and gain unauthorized control over the system.
 
-```{r identifying_IsU2RAttack_correlations, cache=TRUE}
+```{r identifying_IsU2RAttack_correlations, cache=TRUE, echo=FALSE}
 knitr::kable(corrs[(corrs$feature1 == 'IsU2RAttack' | corrs$feature2 == 'IsU2Rattack')
                    & corrs$toIgnore != 'Yes',][1:5],  row.names = FALSE)
 ```
@@ -604,7 +604,7 @@ Identification of the variables correlated with the generic 'IsOtherAttack' Bool
 </b>
 The "Other" category typically includes attacks that do not fit into the specific types mentioned above or attacks that have not been classified under any specific category. It serves as a catch-all category for various attack types that may not be explicitly defined.
 
-```{r identifying_IsOtherAttack_correlations}
+```{r identifying_IsOtherAttack_correlations, echo=FALSE}
 knitr::kable(corrs[(corrs$feature1 == 'IsOtherAttack' | corrs$feature2 == 'IsOtherAttack')
                    & corrs$toIgnore != 'Yes',][1:5],  row.names = FALSE)
 ```
@@ -615,7 +615,7 @@ Identification of the correlations between the other fields, the ones that are n
 single one. 
 </b>
 
-```{r identifying_other_field_correlations, cache=TRUE}
+```{r identifying_other_field_correlations, cache=TRUE, echo=FALSE}
 exclude_fields <- c('Attack', 'AttackCat', 'IsAttack', 'IsDosAttack', 'IsProbeAttack', 'IsR2Lattack', 'IsU2Rattack', 'IsOtherAttack')
 knitr::kable(corrs[!(corrs$feature1 %in% exclude_fields | corrs$feature2 %in% exclude_fields) 
                    & corrs$toIgnore != 'Yes',][1:5],  row.names = FALSE)
@@ -626,6 +626,6 @@ knitr::kable(corrs[!(corrs$feature1 %in% exclude_fields | corrs$feature2 %in% ex
 List of the features automatically discarded because they are the same for the whole dataset. 
 </b>
 
-```{r showing_discarded_features, cache=TRUE}
+```{r showing_discarded_features, cache=TRUE, echo=FALSE}
 knitr::kable(featuresToDiscard,  row.names = FALSE)
 ```

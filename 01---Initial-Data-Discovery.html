@@ -11,7 +11,7 @@
 
 <meta name="author" content="Sergi Puigventos Ventura &amp; Daniel Da Graça" />
 
-<meta name="date" content="2023-06-10" />
+<meta name="date" content="2023-06-11" />
 
 <title>01 - Initial Data Discovery</title>
 
@@ -352,7 +352,7 @@ display: none;
 
 <h1 class="title toc-ignore">01 - Initial Data Discovery</h1>
 <h4 class="author">Sergi Puigventos Ventura &amp; Daniel Da Graça</h4>
-<h4 class="date">2023-06-10</h4>
+<h4 class="date">2023-06-11</h4>
 
 </div>
 
@@ -2419,8 +2419,6 @@ corrs &lt;- corrs[order(desc(corrs$coefficient), corrs$pvalue), 1:7]
 <p><br><b> Identification of the variables correlated with the ‘Attack’
 response variable with a value for each type of attack and the value
 “normal.” when no attack was suffered for the case. </b></p>
-<pre class="r"><code>knitr::kable(corrs[(corrs$feature1 == &#39;Attack&#39; | corrs$feature2 == &#39;Attack&#39;)
-                   &amp; corrs$toIgnore != &#39;Yes&#39;,][1:5],  row.names = FALSE)</code></pre>
 <table>
 <colgroup>
 <col width="13%" />
@@ -2533,8 +2531,6 @@ response variable with a value for each type of attack and the value
 ‘AttackCat’ response variable with a value for each category of attack
 and the value “normal.” when no attack was suffered for the case.
 </b></p>
-<pre class="r"><code>knitr::kable(corrs[(corrs$feature1 == &#39;AttackCat&#39; | corrs$feature2 == &#39;AttackCat&#39;)
-                   &amp; corrs$toIgnore != &#39;Yes&#39;,][1:5],  row.names = FALSE)</code></pre>
 <table>
 <colgroup>
 <col width="12%" />
@@ -2598,8 +2594,6 @@ and the value “normal.” when no attack was suffered for the case.
 <p><br><b> Identification of the variables correlated with the
 <i><b>generic</b></i> ‘IsAttack’ Boolean flag indicating whether an
 attack was observed. </b></p>
-<pre class="r"><code>knitr::kable(corrs[(corrs$feature1 == &#39;IsAttack&#39; | corrs$feature2 == &#39;IsAttack&#39;)
-                   &amp; corrs$toIgnore != &#39;Yes&#39;,][1:5],  row.names = FALSE)</code></pre>
 <table>
 <colgroup>
 <col width="15%" />
@@ -2762,8 +2756,6 @@ attack was observed. </b></p>
 the availability of a system or network by overwhelming it with a flood
 of requests or malicious traffic. The goal is to render the target
 system unresponsive or slow down its performance.</p>
-<pre class="r"><code>knitr::kable(corrs[(corrs$feature1 == &#39;IsDosAttack&#39; | corrs$feature2 == &#39;IsDosAttack&#39;)
-                   &amp; corrs$toIgnore != &#39;Yes&#39;,][1:5],  row.names = FALSE)</code></pre>
 <table>
 <colgroup>
 <col width="14%" />
@@ -2912,8 +2904,6 @@ observed. </b> PROBE: Probe attacks involve attempts to gather
 information about a target system or network. The attacker scans the
 target for open ports, vulnerabilities, or weaknesses to gather
 intelligence that can be used in subsequent attacks.</p>
-<pre class="r"><code>knitr::kable(corrs[(corrs$feature1 == &#39;IsProbeAttack&#39; | corrs$feature2 == &#39;IsProbeAttack&#39;)
-                   &amp; corrs$toIgnore != &#39;Yes&#39;,][1:5],  row.names = FALSE)</code></pre>
 <table>
 <colgroup>
 <col width="16%" />
@@ -2962,8 +2952,6 @@ was observed. </b> R2L (Remote to Local): R2L attacks involve
 unauthorized access attempts to a local system from a remote location.
 Attackers exploit vulnerabilities in the network or system to gain
 access without proper authorization.</p>
-<pre class="r"><code>knitr::kable(corrs[(corrs$feature1 == &#39;IsR2LAttack&#39; | corrs$feature2 == &#39;IsR2Lattack&#39;)
-                   &amp; corrs$toIgnore != &#39;Yes&#39;,][1:5],  row.names = FALSE)</code></pre>
 <table>
 <colgroup>
 <col width="10%" />
@@ -3028,8 +3016,6 @@ observed. </b> U2R (User to Root): U2R attacks occur when a regular user
 attempts to gain root or administrative privileges on a system. The
 attacker exploits vulnerabilities in the system to elevate their
 privileges and gain unauthorized control over the system.</p>
-<pre class="r"><code>knitr::kable(corrs[(corrs$feature1 == &#39;IsU2RAttack&#39; | corrs$feature2 == &#39;IsU2Rattack&#39;)
-                   &amp; corrs$toIgnore != &#39;Yes&#39;,][1:5],  row.names = FALSE)</code></pre>
 <table>
 <colgroup>
 <col width="7%" />
@@ -3072,8 +3058,6 @@ do not fit into the specific types mentioned above or attacks that have
 not been classified under any specific category. It serves as a
 catch-all category for various attack types that may not be explicitly
 defined.</p>
-<pre class="r"><code>knitr::kable(corrs[(corrs$feature1 == &#39;IsOtherAttack&#39; | corrs$feature2 == &#39;IsOtherAttack&#39;)
-                   &amp; corrs$toIgnore != &#39;Yes&#39;,][1:5],  row.names = FALSE)</code></pre>
 <table>
 <colgroup>
 <col width="8%" />
@@ -3120,9 +3104,6 @@ defined.</p>
 <p><br><b> Identification of the correlations between the other fields,
 the ones that are not response variables, in order to identify potential
 features to group into a single one. </b></p>
-<pre class="r"><code>exclude_fields &lt;- c(&#39;Attack&#39;, &#39;AttackCat&#39;, &#39;IsAttack&#39;, &#39;IsDosAttack&#39;, &#39;IsProbeAttack&#39;, &#39;IsR2Lattack&#39;, &#39;IsU2Rattack&#39;, &#39;IsOtherAttack&#39;)
-knitr::kable(corrs[!(corrs$feature1 %in% exclude_fields | corrs$feature2 %in% exclude_fields) 
-                   &amp; corrs$toIgnore != &#39;Yes&#39;,][1:5],  row.names = FALSE)</code></pre>
 <table>
 <colgroup>
 <col width="15%" />
@@ -3840,7 +3821,6 @@ knitr::kable(corrs[!(corrs$feature1 %in% exclude_fields | corrs$feature2 %in% ex
 </table>
 <p><br><b> List of the features automatically discarded because they are
 the same for the whole dataset. </b></p>
-<pre class="r"><code>knitr::kable(featuresToDiscard,  row.names = FALSE)</code></pre>
 <table>
 <thead>
 <tr class="header">

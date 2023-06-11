@@ -70,6 +70,8 @@ data <- read.csv (file="Book2.csv",header=T)
 You can also embed plots, for example:
 
 ```{r feature_selection, echo=FALSE}
+# Testando varias iteraciones cambiando el parámetro escpecificando la cantidad de árboles en el randomforrest llegamos a la conclusión que desempeñaba mejor dejándolo en 70.
+
 #data1 <- data[,c("SrcBytes", "DstBytes", "Land", "WrongFragment", "Urgent", "SameSrvRate", "LoggedIn",  "DstHostSameSrvRate", "DstHostSrvCount","Flag","Attack" )]
 # Resultados del modelo original:
 ## FALSE  TRUE 
@@ -79,7 +81,7 @@ You can also embed plots, for example:
 # Resultados peores que el modelo original:
 ## FALSE  TRUE 
 ## 12037 57505 
-#data1 <- data[,c("Land", "LoggedIn", "ProtocolType", "NumShells", "IsGuestLogin", "RootShell",  "Urgent", "Flag", "IsHostLogin", "NumFailedLogin", "Service", "Attack")]
+# data1 <- data[,c("Land", "LoggedIn", "ProtocolType", "NumShells", "IsGuestLogin", "RootShell",  "Urgent", "Flag", "IsHostLogin", "NumFailedLogin", "Service", "Attack")]
 
 # Intento 02 - Substituyendo las variables provistas en el modelo orginal por las que se han identificado como teniendo la mayor correlación con las variables respuestas derivadas desde "Attack".
 # Resultados peores que con el modelo original pero mejores que los del intento 01.
@@ -102,15 +104,49 @@ You can also embed plots, for example:
 # Intento 05 - Se conservan las mismas variables que en el intento 05 pero se le añade una nueva, TotalBytes = SrcBytes + DstBytes.
 # Resultados mejores que con el modelo original y del intento 04.
 ## FALSE  TRUE 
-##   806 68736
+##   766 68776
 data <- data %>% mutate(TotalBytes = SrcBytes + DstBytes)
 #data1 <- data[,c("TotalBytes", "Land", "Service", "LoggedIn", "Flag", "SameSrvRate", "DiffSrvRate", "DstHostDiffSrvRate", "RootShell",  "Duration", "DstHostRerrorRate", "Count", "DstHostSameSrvRate", "DstHostSrvCount", "ProtocolType", "NumShells", "IsGuestLogin", "Attack")]
 
-# Intento 07 - Se conservan las mismas variables que en el intento 06 pero se le añade las que no tenía y tienen un coeficiente de correlación >= 0.5 con las variables respuestas.
+# Intento 06 - Se conservan las mismas variables que en el intento 06 pero se le añade las que no tenía y tienen un coeficiente de correlación >= 0.5 con las variables respuestas.
 # Resultados peores que con el modelo del intento 05.
 ## FALSE  TRUE 
 ##   885 68657
-data1 <- data[,c("TotalBytes", "Land", "Service", "LoggedIn", "Flag", "SameSrvRate", "DiffSrvRate", "DstHostDiffSrvRate", "RootShell",  "Duration", "DstHostRerrorRate", "Count", "DstHostSameSrvRate", "DstHostSrvCount", "ProtocolType", "NumShells", "IsGuestLogin", "RootShell", "Urgent", "Attack")]
+#data1 <- data[,c("TotalBytes", "Land", "Service", "LoggedIn", "Flag", "SameSrvRate", "DiffSrvRate", "DstHostDiffSrvRate", "RootShell",  "Duration", "DstHostRerrorRate", "Count", "DstHostSameSrvRate", "DstHostSrvCount", "ProtocolType", "NumShells", "IsGuestLogin", "RootShell", "Urgent", "Attack")]
+
+# Intento 07 - Se conservan las mismas variables que en el intento 05 pero, para intentar predecir mejor los tipos de ataques U2R, siendo este el tipo más grave que deberíamos identificar,  se le añade una feature nueva en base a una combinación de aquellas que tienen mayor correlación con este tipo de ataques
+# Resultados ligeramente peores que con el modelo del intento 05.
+## FALSE  TRUE 
+##   854 68688
+#data$U2RFeatures <- as.integer(data$NumCompromised > 0 | data$NumRoot > 0 | data$NumShells > 0 | data$NumFile > 0)
+#data1 <- data[,c("U2RFeatures", "TotalBytes", "Land", "Service", "LoggedIn", "Flag", "SameSrvRate", "DiffSrvRate", "DstHostDiffSrvRate", "RootShell",  "Duration", "DstHostRerrorRate", "Count", "DstHostSameSrvRate", "DstHostSrvCount", "ProtocolType", "NumShells", "IsGuestLogin", "Attack")]
+
+# Intento 08 - Se conservan las mismas variables que en el intento 05 pero se substituye algunas variables numéricas por otra que creemos que las sumariza.
+# La forma adoptada para sumarizarlas fue de normalizarlas y después de sacar la média de los valores.
+# La función scale() calcula las puntuaciones z de las columnas numéricas especificadas. Resta la media de cada columna y la divide por la desviación estándar, con lo que cada columna tiene una media de 0 y una desviación estándar de 1. 
+# Las puntuaciones Z, también conocidas como puntuaciones estándar, son una medida de cuántas desviaciones estándar hay entre una observación o un punto de datos y la media de una distribución. Una puntuación z indica la posición relativa de un punto de datos individual en relación con la media de la distribución.
+# El cálculo de una puntuación z consiste en restar la media de la distribución del punto de datos individual y dividirla por la desviación típica de la distribución.
+# En este caso hicimos más de una tentativa pero las que realmente parecieron agregar algo fue la sumarización de las "RerrorRate" 
+# Al final, las variables realacionadas con RerrorRate aparecen entre las que tienen mayor correlación entre ellas y también con las variables respuestas. 
+# Las variables realacionadas con SerrorRate aparentaban tener una correlación solo moderada con las variables respuestas.  
+# Las variables relacionadas con DiffSrvRate aparentaban tener una correlación solo moderada con las variables respuestas, pero con IsProbeAttack aparecía como teneiendo una buena correlación entonces también la continuaremos derivando aunque no la selecionemos para el modelo general. 
+# Las variables relacionadas con SameSrvRate tampoco mejoraron el modelo, entonces preferimos guardarlas por separado. Estas tenían una correlación entre ellas con un coefficientes entre 0.83 y 0.94.
+normalized_Vars <- data.frame(scale(data[, c('DstHostRerrorRate', 'RerrorRate', 'SrvRerrorRate', 'DstHostSrvRerrorRate'
+                                             , 'DiffSrvRate', 'DstHostDiffSrvRate'
+                                             , 'SameSrvRate', 'SameSrvRate', 'DstHostSrvCount'
+                                             , 'SerrorRate', 'DstHostSerrorRate', 'SrvSerrorRate', 'DstHostSrvSerrorRate')]))
+data$SameSrvPct <- apply(normalized_Vars, 1, function(row){
+    return(mean(row['SameSrvRate'], row['SameSrvRate'], row['DstHostSrvCount']))})
+data$DiffSrvPct <- apply(normalized_Vars, 1, function(row){
+    return(mean(row['DstHostDiffSrvRate'], row['DiffSrvRate']))})
+data$RerrorsPct <- apply(normalized_Vars, 1, function(row){
+    return(mean(row['DstHostRerrorRate'], row['RerrorRate'], row['SrvRerrorRate'], row['DstHostSrvRerrorRate']))})
+data$SerrorsPct <- apply(normalized_Vars, 1, function(row){
+    return(mean(row['DstHostSerrorRate'], row['SerrorRate'], row['SrvSerrorRate'], row['DstHostSrvSerrorRate']))})
+# Resultados ligeramente mejores que con el modelo del intento 05. Entonces vamos guardar la nueva variable "RerrorsPct" 
+## FALSE  TRUE 
+##   764 68778
+data1 <- data[,c("TotalBytes", "Land", "Service", "LoggedIn", "Flag", "SameSrvRate", "DiffSrvRate", "DstHostDiffSrvRate", "RootShell",  "Duration", "RerrorsPct", "Count", "DstHostSameSrvRate", "DstHostSrvCount", "ProtocolType", "NumShells", "IsGuestLogin", "Attack")]
 
 # data1 <- data[,c(4:12)]
 data1$Attack <- as.factor(data1$Attack)
@@ -129,7 +165,7 @@ dim(training)
 
 
 ```{r train_random_forest, echo=FALSE}
-output.forest <- randomForest(Attack ~ ., data = training)
+output.forest <- randomForest(Attack ~ ., data = training, ntree = 70)
 print(output.forest)
 plot(output.forest)
 ```

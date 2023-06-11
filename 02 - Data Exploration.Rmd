@@ -1,16 +1,19 @@
 ---
-title: "02 - Data Exxploration"
-author: "Humbert Costas, Sergi Puigventos Ventura & Daniel Da Graça"
+title: "02 - PreProcessing using Random Forest"
+author: "Sergi Puigventos Ventura & Daniel Da Graça"
 date: "`r Sys.Date()`"
 output: html_document
 ---
-
 ```{r setup, include=FALSE, results='hide'}
 knitr::opts_chunk$set(echo = TRUE)
+
 # Packages required for the project
-required_packages <- c('rstudioapi', 'fs', 'stringr', 'knitr', 'randomForest', 'readr', 'caret', 'e1071', 'tidyverse', 'ggplot2', 'dplyr', 'corrplot')
+required_packages <- c('rstudioapi', 'fs', 'stringr', 'knitr', 'randomForest', 'readr', 'caret', 'e1071', 'tidyverse'
+                       , 'ggplot2', 'dplyr', 'corrplot', 'psych', 'vcd', 'kableExtra')
+
 # Installation of all required packages not already installed
 install.packages(setdiff(required_packages, rownames(installed.packages())))
+
 # Loading required packages
 library('rstudioapi', warn.conflicts = FALSE)
 library('fs', warn.conflicts = FALSE)
@@ -23,6 +26,10 @@ library('tidyverse', warn.conflicts = FALSE)
 library('ggplot2', warn.conflicts = FALSE)
 library('dplyr', warn.conflicts = FALSE)
 library('corrplot', warn.conflicts = FALSE)
+library('psych', warn.conflicts = FALSE)
+library('vcd', warn.conflicts = FALSE)
+library('kableExtra', warn.conflicts = FALSE)
+
 # Get this rmd file current absolute path 
 # (from: https://stackoverflow.com/questions/47044068/get-the-path-of-current-script)
 if (rstudioapi::isAvailable()) {
@@ -35,28 +42,97 @@ tryCatch(expr = {setwd(wdir)},
          warning = function(w){print(w)})
 ```
 
+## Introducción
+<br>
 
-## REFERENCES
+En esta sección probamos formas de mejorar el modelo provisto para la práctica basado en el algoritmo de Random Forest.
 
-List of references:
+<br>
 
--   Source data [KDD Cup 1999 Data Data Set](https://archive.ics.uci.edu/ml/datasets/kdd+cup+1999+data)
--   A Detailed [Analysis of the KDD CUP 99 Data Set](https://www.ecb.torontomu.ca/~bagheri/papers/cisda.pdf)
--   KDD [download archive](https://www.kdd.org/kdd-cup/view/kdd-cup-1999/Data)
--   Kaggle comunity [notebooks](https://www.kaggle.com/datasets/galaxyh/kdd-cup-1999-data/code) with KDD CUP 99 data set.
+Preguntando a chatGPT en que consiste el algoritmo de Random Forest, él explica que ese algoritmo es "<i>un método de aprendizaje conjunto que combina varios árboles de decisión para realizar predicciones. Es un algoritmo de aprendizaje supervisado que se utiliza tanto para tareas de regresión como de clasificación.</i>"
+
+En nuestro caso, el objetivo siendo de predecir los ataques, se utilizará su función de regresión. Para eso, el algoritmo "<i>construye árboles de decisión utilizando los datos de entrenamiento y las características seleccionadas. Los árboles se construyen mediante un proceso recursivo denominado partición recursiva, que divide los datos en subconjuntos en función de los valores de las características. Una vez construidos todos los árboles, cada uno de ellos realiza una predicción. Se utiliza como predicción final la media o la mayoría de los votos de las predicciones de los árboles.</i>"
+
+ChatGPT también añade que "<i>las principales características del algoritmo Random Forest incluyen su capacidad para manejar datos de alta dimensión, manejar valores perdidos y valores atípicos, y proporcionar estimaciones de la importancia de las características</i>", lo que conviene bien para este ejercicio dado que muchas de las características del fichero tienen una distribución poco normal, distribuciones concentradas en uno o muy pocos valores, o con muchos outliers (de hecho en la fase de exploración dejamos de utilizar boxplots para describir los datos porque no permitían ilustrar nada).
+
+ChatGPT concluye que "<i>en general, el algoritmo Random Forest es conocido por su versatilidad, precisión y capacidad para manejar conjuntos de datos complejos, lo que lo convierte en una opción popular para diversas tareas de aprendizaje automático</i>", lo que para nosotros neófitas no está de más. 😊  
+
+<br>
+
+La forma que hemos entonces seguido para intentar mejorar el modelo ha sido de ejecutar varios intentos cambiado en cada uno algunas ideas que se nos ocurrieron desde que empezamos a trabajar en esta práctica.
+<br>
+<br>
+
+1. Lo primero obviamente ha sido de testar el modelo original (punto de partida de la práctica) realizando varias iteraciones cambiando el parámetro especificando la cantidad de árboles en el randomforrest() de forma a llegar el valor que creemos que desempeñaba mejor. 
+
+2. El primero intento consistió en simplemente substituir las variables provistas en el modelo original por las que se habían identificado como teniendo más correlación con la respuesta "Attack". 
+
+3. El segundo intento trató de substituir las variables provistas en el modelo original por
+   + las que se han identificado como teniendo la mayor correlación (coefficient >= 0.7 & p-value <= 0.05) con cada una de las variables respuestas que derivamos de los valores de "Attack" en la <a href="./01---Initial-Data-Discovery.html">fase inicial de exploración de los datos</a>
+   + pero también aquellas que no estaban entre las más fuertes correlaciones pero aparecían entre las pocas identificadas para aquellas variables respuestas con pocas correlaciones. 
+
+4. El tercero intento fue poco diferente del anterior. En este solo 
+   + substituimos las variables provistas en el modelo original por las que se han identificado como teniendo la mayor correlación con las variables respuestas derivadas desde "Attack"  
+   + y con las que tienen buena relación con la variable genérica "IsAttack". 
+
+5. Con el cuarto intento, substituimos las variables provistas en el modelo original por  
+   + las que se han identificado como teniendo una correlación con las variables respuestas derivadas desde "Attack" con un coeficiente >= 0.6,
+   + manteniendo las del intento 02,
+   + y DstHostRerrorRate del intento 03, pero removiendo RerrorRate, SrvRerrorRate, DstHostSrvRerrorRate porque tienen una correlación entre ellas muy fuerte (coef. > 0.96) lo que puede acabar siendo redundante y al final no ayudar, entonces nos quedamos con aquella de las cuatro que tiene mayor coeficiente de correlación con la variable respuesta "Attack". 
+
+6. Para el quinto intento decidimos  
+   + seguir con las variables utilizadas en el cuarto intento  
+   + pero añadiéndoles una nueva, TotalBytes = SrcBytes + DstBytes. 
+
+7. En el sexto intento  
+   + conservamos las variables del quinto intento  
+   + pero esta vez añadiéndoles las variables que habían quedado fuera hasta ahora, pero tienen un coeficiente de correlación >= 0.5 con las variables respuestas. 
+
+8. Con el séptimo intento  
+   + conservamos las mismas variables que en el quinto intento  
+   + pero, para intentar predecir mejor los tipos de ataques U2R, siendo este el tipo más grave que deberíamos identificar, se les añadió una “feature” nueva en base a una combinación de aquellas que tienen mayor correlación con este tipo de ataques, NumCompromised, NumRoot, NumShells y NumFile. 
+
+9. Para el octavo intento, 
+   + conservamos las mismas variables que en el quinto intento  
+   + pero substituyendo algunas variables numéricas por otra que creemos que las resumen. 
+
+<br>
+
+Nuestro mejor modelo habrá sido el octavo. Acertó bastante bien con solo 1.15 % de errores contra el fichero de testing pero contra el fichero data_full no fue igual ya que observamos 6.96% de errores.
+
+```{r Final_Results_InIntro, echo=FALSE, cache=TRUE}
+
+cat(paste("         -------------------------------------\n         |    Modelo 8    | Contra data_full |\n"
+          ,"--------|----------------|------------------|\n | FALSE |   800 |  1.15% |   21656 |  6.96% |\n"
+          , "|  TRUE | 68742 | 98.85% |  289373 | 93.04% |\n --------|----------------|------------------|"), fill = TRUE)
+```
 
 
-## INITIAL ACTIONS
+Por falta de más tiempo ya lo dejamos aquí pero entendemos que habría mucho más que mirar para intentar mejorar esta predicción, como por ejemplo: 
+   * intentar utilizar algoritmos para clasificar las características y así identificar padrones que se nos habrán escapado,
+   * intentar jugar con el tamaño de los ficheros de training y testing para optimizar los modelos derivados,
+   * intentar encontrar modelos para categoría de ataque de forma a verificar si especializando los modelos y descartando los ataques ya encontrados se podría mejorar todavía más el desempeño,
+   * conseguir utilizar otros algoritmos predictivos para compararlos con los resultados del Random Forest (intentamos sin éxito usar el modelo neuronal - fit(), SVM -  svm() o CART - train()). 
+<br><br>
 
-Based on the references we adopt the idea of using of two "reference" or "metadata" files anticpating analysis.
-  1. A dataset with a categorization of the response variable values, the attack types (https://kdd.org/cupfiles/KDDCupData/1999/training_attack_types)
-  2. A reference table with for each of the main data set features: a name, data type, stastictical type and description.
 
+Cosas que se dejaron de hacer (por falta de tiempo):
 
-```{r read_data}
+   * intentar utilizar algoritmos para clasificar las características y así identificar padrones que se nos habrán escapado;
+   * intentar encontrar modelos para categoría de ataque de forma a verificar si especializando los modelos y descartando los ataques ya encontrados se podría mejorar todavía más el desempeño;
+   * conseguir utilizar otros algoritmos predictivos para compararlos con los resultados del Random Forest (intentamos sin éxito usar el modelo neuronal - fit(), SVM -  svm() o CART - train()). 
+<br><br>
+
+Al final esto todo es para decir que con más tiempo hay mucho más por explorar que podría talvez servir mejor el objetivo de predicción de ataques. 
+<br><br>
+
+```{r read_data, include=FALSE, echo=FALSE}
 readingdataOK <- TRUE
 tryCatch(
     expr = {
+        # Loading the reference data set with the conclusions from the Initial Data Exploration stage
+        features <- read.csv (file="features(2).csv",header=T)
+
         # Loading the full dataset
         data_full <- read_csv("Book1.csv",
                           col_types = cols(SrcBytes = col_integer(),
@@ -66,16 +142,19 @@ tryCatch(
         
         # Loading the training dataset
         data <- read.csv (file="Book2.csv",header=T)
-        
-        # Loading a reference data set with for each data feature: a name, data type, stastictical type and description
-        # This info was collected from: 
-        # - the header record for the name, 
-        # - the R command str(data) for the data type, 
-        # - the kddcup.names (http://kdd.org/cupfiles/KDDCupData/1999/kddcup.names) for the statistical type
-        # - and asking chatgpt for a brief functional description for each field
-        features <- read.csv (file="features.csv",header=T)
-        nfeatures <- nrow(features)
-        
+        nrowsbeforecleaning <- nrow(data)        
+        nrespvars <- 1
+
+        # Removing eventual duplicated rows 
+        data <- unique(data)
+        nrows <- nrow(data)
+        if(nrows != nrowsbeforecleaning){
+            cat(paste('Number of duplicated rows removed:', nrowsbeforecleaning - nrows), fill = TRUE)
+        }
+
+        # Cleaning the Response variable which for some reason contains a dot (".") which we preferred to remove
+        data$Attack <- gsub("[.,]", "", data$Attack)
+                
         # Loading a data set with a categorization of the response variable: attack types 
         # (https://kdd.org/cupfiles/KDDCupData/1999/training_attack_types)        
         attackcats <- read.csv (file="attack_types.csv",header=F, col.names = c("Attack", "Category"))
@@ -83,24 +162,82 @@ tryCatch(
         # Addition of response variable features based on the data$Attack values
         data$AttackCat <- apply(data, 1, function(row){
             category <- attackcats$Category[attackcats$Attack == row['Attack']]
-            if(row['Attack']=='normal.'){
+            if(row['Attack']=='normal'){
                 category <- 'normal'
             }else if (length(category) == 0) {
-                category <- "unknown"
+                category <- "other"
             }else if (length(category) > 1) {
                 category <- category[1]
             }
             return(category)
         })
+        nrespvars <- nrespvars + 1
+        
         data$IsAttack <- apply(data, 1, function(row){
             isattack <- 0
-            if(row['Attack']!='normal.'){
+            if(row['Attack']!='normal'){
                 isattack <- 1
             }
             return(isattack)
         })
-            
-        knitr::kable(features)
+        nrespvars <- nrespvars + 1
+
+        data$IsDosAttack <- apply(data, 1, function(row){
+            isattack <- 0
+            if(row['AttackCat']!='dos'){
+                isattack <- 1
+            }
+            return(isattack)
+        })
+        nrespvars <- nrespvars + 1
+
+        data$IsProbeAttack <- apply(data, 1, function(row){
+            isattack <- 0
+            if(row['AttackCat']!='probe'){
+                isattack <- 1
+            }
+            return(isattack)
+        })
+        nrespvars <- nrespvars + 1
+        
+        data$IsR2Lattack <- apply(data, 1, function(row){
+            isattack <- 0
+            if(row['AttackCat']!='r2l'){
+                isattack <- 1
+            }
+            return(isattack)
+        })
+        nrespvars <- nrespvars + 1
+        
+        data$IsU2Rattack <- apply(data, 1, function(row){
+            isattack <- 0
+            if(row['AttackCat']!='u2r'){
+                isattack <- 1
+            }
+            return(isattack)
+        })
+        nrespvars <- nrespvars + 1
+        
+        data$IsOtherAttack <- apply(data, 1, function(row){
+            isattack <- 0
+            if(row['AttackCat']!='other'){
+                isattack <- 1
+            }
+            return(isattack)
+        })
+        nrespvars <- nrespvars + 1
+        
+        nfeatures <- nrow(features)
+        ncols <- ncol(data)
+        if(ncols != nfeatures || ncols == 0 || nrows == 0){
+            if(ncols != nfeatures){
+                print(paste("The number of cols on the trainig dataset,", ncols, 
+                          "does not match the expected number of features", nfeatures, "."), row.names = FALSE)
+            }else{
+                print('There may be some issue with the dataset.', row.names = FALSE)
+            }
+            readingdataOK <- FALSE
+        }
 
     }, error = function(e){
         readingdataOK <- FALSE
@@ -109,116 +246,533 @@ tryCatch(
         print(w)
     }
 )
+
+
 ```
 
-## Trying to understand correlations between variables
 
-To find out correlations between variables, we used the cor() function (based on advice from chatGPT answering the question: <i>"How to find out about correlations between variables?"</i>).
-  - The cor(data.frame()) expression calculates correlation coefficients which measure the linear association between columns of a data frame. 
-  - The correlation coefficients range from -1 to +1, where -1 indicates a perfect negative linear relationship, +1 indicates a perfect positive linear relationship, and 0 indicates no linear relationship.
-  - The resulting correlation matrix is a square matrix where each element represents the correlation between two variables.
-  - For easiness of use we transformed the matrix into another data frame which we then order to get the highest correlations.
 
-```{r raw_correlations}
-corrmatrix <- cor(select_if(data, is.numeric))
-corrmatrixcols <- colnames(corr_matrix)
-corrmatrixrows <- rownames(corr_matrix)
-corrs <- data.frame(feature1 = c(), feature2 = c(), coefficient = c())
-for(c in 1:ncol(corrmatrix)){
-    for(r in c:nrow(corrmatrix)){
-        if(corrmatrixcols[c] != corrmatrixrows[r]){
-            corrs <- rbind(corrs
-                           , data.frame(feature1 = corrmatrixcols[c]
-                                        , feature2 = corrmatrixrows[r]
-                                        , coefficient = round(corrmatrix[r, c], digits = 5)))
-        }
+## Consideraciones por "feature" sacadas de la <a href="./01---Initial-Data-Discovery.html">fase inicial de exploración de los datos</a>
+<br><br>
+
+```{r features_considerations, echo=FALSE, cache=TRUE}
+# Create the table using kable
+kableExtra::kable(features[,c('Feature', 'StatType', 'Description', 'Keep', 'Observations')]
+                  , booktabs = TRUE, escape = FALSE) %>% kable_styling(full_width = TRUE)
+```
+<br>
+
+
+
+### Ejecución del modelo original 
+<br>
+
+Esta ejecución del modelo original (punto de partida de la práctica) nos va servir de marco para determinar si hay mejora de performance del modelo con los demás intentos. 
+Además también nos ha permitido encontrar el valor del parámetro especificando la cantidad de árboles en el randomforrest() con el cual creemos que el modelo original desempeña mejor. Después de varias iteraciones, aunque los resultados raramente son exactamente los mismos, llegamos a la conclusión que el valor 100 es el que creemos que permite al modelo desempeñar mejor. 
+Al final compararemos los demás modelos con las estadísticas básicas de acierto, siendo estas en el caso del modelo original: 
+   + FALSE:     1835, 
+   + TRUE:      67707.
+
+```{r intent_00_feature_selection, cache=TRUE}
+data1 <- data[,c("SrcBytes", "DstBytes", "Land", "WrongFragment", "Urgent", "SameSrvRate", "LoggedIn",  "DstHostSameSrvRate", "DstHostSrvCount","Flag","Attack" )]
+data1$Attack <- as.factor(data1$Attack)
+```
+```{r intent_00_train_test, echo=FALSE, cache=TRUE}
+inTrain <- suppressWarnings(createDataPartition(y=data1$Attack,p=0.1, list=FALSE))
+training <- data1[inTrain,]
+testing <- data1[-inTrain,]
+```
+```{r intent_00_train_random_forest, echo=FALSE, cache=TRUE}
+output.forest <- randomForest(Attack ~ ., data = training, ntree = 100)
+plot(output.forest, main="Modelo Inicial provisto para la práctica")
+```
+```{r intent_00_validations, echo=FALSE, cache=TRUE}
+pred <- predict(output.forest,testing)
+valid <- testing
+valid$Attack <- as.character(valid$Attack)
+valid$pred <- as.character(pred)
+valid$match <- valid$Attack == valid$pred
+table(valid$match)
+table(valid[, c("match", "Attack")])
+```
+```{r intent_00_conf_matrix, echo=FALSE, cache=TRUE}
+valid <- testing
+cm <- confusionMatrix(pred, testing$Attack)
+kableExtra::kable(cm$table)
+```
+<br>
+
+
+
+### Intento 01
+<br>
+El primero intento consistió en simplemente substituir las variables provistas en el modelo original por las que se habían identificado como teniendo correlación con la variable respuesta "Attack". 
+
+Desafortundamente este primero intento acabó dando unos resultados mucho peores que los del modelo original con FALSE: 5691, TRUE: 63851. 
+
+De este experimento, fuera considerar que talvez nos quedaríamos con las variables que tenían una correlación fuerte, no sacamos nada.  
+
+```{r getting_Attack_correlations, cache=TRUE, echo=FALSE}
+tryCatch(
+    expr = {knitr::kable(corrs[(corrs$feature1 == 'Attack' | corrs$feature2 == 'Attack')
+                               & corrs$toIgnore != 'Yes',][1:5],  row.names = FALSE)
+   }, error = function(e){
+        print(paste("Try executing the first R Markdown file: [01 - Initial Data Discovery.Rmd].\n", e), row.names=FALSE)
+    }, warning = function(w){
+        print(paste("Try executing the first R Markdown file: [01 - Initial Data Discovery.Rmd].\n", e), row.names=FALSE)
     }
-}
-corrs <- corrs[order(desc(corrs$coefficient)), ]
-
-knitr::kable(corrs)
+)
 ```
 
-## Exploration of the training dataset
+```{r intent_01_feature_selection, cache=TRUE}
+data1 <- data[,c("Land", "LoggedIn", "ProtocolType", "NumShells", "IsGuestLogin", "RootShell",  "Urgent", "Flag"
+                 , "IsHostLogin", "NumFailedLogin", "Service", "Attack")]
+```
+```{r intent_01_train_test, echo=FALSE, cache=TRUE}
+data1$Attack <- as.factor(data1$Attack)
+inTrain <- suppressWarnings(createDataPartition(y=data1$Attack,p=0.1, list=FALSE))
+training <- data1[inTrain,]
+testing <- data1[-inTrain,]
+```
+```{r intent_01_train_random_forest, echo=FALSE, cache=TRUE}
+output.forest <- randomForest(Attack ~ ., data = training, ntree = 100)
+plot(output.forest, main="Intento 01")
+```
+```{r intent_01_validations, echo=FALSE, cache=TRUE}
+pred <- predict(output.forest,testing)
+valid <- testing
+valid$Attack <- as.character(valid$Attack)
+valid$pred <- as.character(pred)
+valid$match <- valid$Attack == valid$pred
+table(valid$match)
+table(valid[, c("match", "Attack")])
+```
+```{r intent_01_conf_matrix, echo=FALSE, cache=TRUE}
+valid <- testing
+cm <- confusionMatrix(pred, testing$Attack)
+kableExtra::kable(cm$table)
+```
+<br>
 
-```{r data_exploration}
-ncols <- ncol(data)
-if(ncols != nfeatures){
-    cat(paste("the number of cols on the trainig dataset,", ncols, 
-              "does not match the expected number of features", nfeatures, "."))
-    readingdataOK <- FALSE
-}
-if(readingdataOK)
-{
-    respvarAttack <- data[, 42]
-    respvarAttackcat <- data[, 43]
-    respvarIsAttack <- data[, 44]
-    for(i in 1:ncols) {
-        df <- data.frame(data[ , i], data$Attack, data$AttackCat, data$IsAttack)
-        colnames(df) <- c(features[i,1], 'Attack', 'AttackCat', 'IsAttack')
-        minval <- min(df[ , 1])
-        maxval <- max(df[ , 1])
-        cat(paste('----------------------------\nDetails of feature', i, '[', features[i,1], ']:\n'), fill = TRUE)
-        cat(paste('   Data type:', features[i, 2]), fill = TRUE)
-        cat(paste('   Statistical type:', features[i, 3]), fill = TRUE)
-        cat(paste('   Field Description:', features[i, 4], '\n'), fill = TRUE)
-        nmissingvals <- sum(is.na(df[ , 1])) # 'is.finite()' function is used to identify non-NA and non-NaN values
-        cat(paste('   Number of Missing values:', nmissingvals, '\n\n'), fill = TRUE)
-        if(minval == maxval){ 
-            print('Both minimum and maximum values are the same!')            
-        }else {
-            cat(paste('   Value Minimum:[', minval, '], Value Maximum:[', maxval, ']'), fill = TRUE)
-            if (features[i, 3] == 'symbolic'){
-                values <- levels(factor(df[ , 1])) # Getting the values
-                values.dis <- data.frame(table(df[ , 1])) # Getting values distribution
-                colnames(values.dis)[1] <- "Vals"
-                colnames(values.dis)[2] <- "Freq"
-                nvals <- nrow(values.dis)
-                values.dis <- values.dis[order(values.dis$Freq, decreasing=TRUE),]
-                if(nvals >= 30){
-                    print(values.dis[1:30,], row.names = FALSE)
-                    cat(paste("\n... [", (nvals-30), "more]" ), fill = TRUE)
-                    barplot(values.dis$Freq[1:15], names.arg = values.dis$Vals[1:15], 
-                            xlab = "Values", ylab = "Occurrences", main = features[i,1])
-                }else{
-                    print(values.dis, row.names = FALSE)
-                    barplot(values.dis$Freq, names.arg = values.dis$Vals, 
-                            xlab = "Values", ylab = "Occurrences", main = features[i,1])
-                }
-            }else{
-                colmean <- mean(df[ , 1])
-                stdev <- sd(df[ , 1])
-                if(stdev == 0){
-                    print('   Standard Deviation is 0 for the feauture.')
-                }else{
-                    interquartile <- IQR(df[ , 1])
-                    cat(paste('   Interquartile difference:[', interquartile, ']'), fill = TRUE)
-                    if(interquartile == 0){print('      Requires looking for skewness.')}
-                    
-                    corr_matrix <- cor(select_if(df, is.numeric)) 
-                    print(corr_matrix)
-                    plot <- corrplot(corr_matrix, method = 'number') # colorful number
-                    print(plot)
 
-                    print(str(df[ , 1]))
-                    colsummary <- summary(df[ , 1]) 
-                    print(colsummary)
-                    hist(df[ , 1])
-                }
-            }
-            if( i < 42){
-                cat(paste('Scatter plot for', features[i,1], 'vs. Attack:'), fill = TRUE)
-                plot <- ggplot(data = df) + geom_point(mapping = aes(x = df[ , 1], y = Attack))
-                print(plot)
-                cat(paste('Scatter plot for', features[i,1], 'vs. Attack Categories:'), fill = TRUE)
-                plot <- ggplot(data = df) + geom_point(mapping = aes(x = df[ , 1], y = AttackCat))
-                print(plot)
-                cat(paste('Scatter plot for', features[i,1], 'vs. Is Attack Indicator:'), fill = TRUE)
-                plot <- ggplot(data = df) + geom_point(mapping = aes(x = df[ , 1], y = IsAttack))
-                print(plot)
-            }
-        }
+
+### Intento 02
+<br>
+El segundo intento trató de substituir las variables provistas en el modelo original por 
+   - las que se han identificado como teniendo la mayor correlación (coefficient >= 0.7 & p-value <= 0.05) con cada una de las variables respuestas que derivamos de los valores de "Attack" en la <a href="./01---Initial-Data-Discovery.html">fase inicial de exploración de los datos</a>
+   - pero también aquellas que no estaban entre las más fuertes correlaciones pero aparecían entre las pocas identificadas para aquellas variables respuestas con pocas correlaciones, siendo así el caso de:
+     + Duration - IsOtherAttack, coef.= -0.3077885, pvalue = 0
+     + RootShell - IsU2Rattack, coef.= 0.365656, pvalue = 0
+     + DiffSrvRate - IsProbeAttack, coef.= -0.5137125, pvalue = 0
+     + DstHostDiffSrvRate - IsProbeAttack, coef.= -0.6604133, pvalue = 0
+
+Este segundo intento mejoró muchísimo comparado con el primero pero sigue peor que los del modelo original con FALSE: 1935, TRUE: 67607. 
+
+De este experimento, también solo nos vamos al próximo con la idea de conservar las variables que tenían una correlación fuerte (coefficient >= 0.7 & p-value <= 0.05).  
+
+```{r getting_BestResponseVar_correlations, cache=TRUE, echo=FALSE}
+tryCatch(
+    expr = {
+        exclude_fields <- c('Attack', 'AttackCat', 'IsAttack', 'IsDosAttack', 'IsProbeAttack', 'IsR2Lattack'
+                            , 'IsU2Rattack', 'IsOtherAttack')
+        knitr::kable(corrs[(corrs$feature1 %in% exclude_fields | corrs$feature2 %in% exclude_fields) 
+                           & abs(corrs$coefficient) >= 0.7 & corrs$pvalue <= 0.05  
+                           & corrs$toIgnore != 'Yes',][1:5],  row.names = FALSE)
+   }, error = function(e){
+        print(paste("Try executing the first R Markdown file: [01 - Initial Data Discovery.Rmd].\n", e), row.names=FALSE)
+    }, warning = function(w){
+        print(paste("Try executing the first R Markdown file: [01 - Initial Data Discovery.Rmd].\n", e), row.names=FALSE)
     }
-}
+)
+```
+
+```{r intent_02_feature_selection, cache=TRUE}
+data1 <- data[,c("Land", "LoggedIn", "Service", "Flag", "SameSrvRate", "DstHostSameSrvRate", "DstHostSrvCount", "Count", "DiffSrvRate", "DstHostDiffSrvRate", "RootShell",  "Duration", "Attack")]
+```
+```{r intent_02_train_test, echo=FALSE, cache=TRUE}
+data1$Attack <- as.factor(data1$Attack)
+inTrain <- suppressWarnings(createDataPartition(y=data1$Attack,p=0.1, list=FALSE))
+training <- data1[inTrain,]
+testing <- data1[-inTrain,]
+```
+```{r intent_02_train_random_forest, echo=FALSE, cache=TRUE}
+output.forest <- randomForest(Attack ~ ., data = training, ntree = 70)
+plot(output.forest, main="Intento 02")
+```
+```{r intent_02_validations, echo=FALSE, cache=TRUE}
+pred <- predict(output.forest,testing)
+valid <- testing
+valid$Attack <- as.character(valid$Attack)
+valid$pred <- as.character(pred)
+valid$match <- valid$Attack == valid$pred
+table(valid$match)
+table(valid[, c("match", "Attack")])
+```
+```{r intent_02_conf_matrix, echo=FALSE, cache=TRUE}
+valid <- testing
+cm <- confusionMatrix(pred, testing$Attack)
+kableExtra::kable(cm$table)
+```
+<br>
+
+
+
+### Intento 03
+<br>
+Este tercero intento fue poco diferente del anterior. En este solo  
+   + substituimos las variables provistas en el modelo original por las que se han identificado como teniendo la mayor correlación (coefficient >= 0.7 & p-value <= 0.05) con las variables respuestas derivadas desde "Attack"   
+   + y con las que tienen buena relación con la variable genérica "IsAttack", aunque descinsideremos RerrorRate, SrvRerrorRate y DstHostSrvRerrorRate por tener una relación muy fuerte.  
+   
+Este tercero intento nos da resultados semejantes al segundo pero, comparado con el original, sigue peor con FALSE: 1972, TRUE: 67570. 
+  
+De este experimento, también solo nos vamos al próximo con la idea de conservar las variables que tienen una correlación fuerte.  
+
+```{r intent_03_feature_selection, cache=TRUE}
+data1 <- data[,c("Land", "LoggedIn", "Service", "Flag", "SameSrvRate", "DstHostSameSrvRate", "DstHostSrvCount", "Count"
+                 , "DstHostRerrorRate", "RerrorRate", "SrvRerrorRate",  "DstHostSrvRerrorRate", "Attack")]
+```
+```{r intent_03_train_test, echo=FALSE, cache=TRUE}
+data1$Attack <- as.factor(data1$Attack)
+inTrain <- suppressWarnings(createDataPartition(y=data1$Attack,p=0.1, list=FALSE))
+training <- data1[inTrain,]
+testing <- data1[-inTrain,]
+```
+```{r intent_03_train_random_forest, echo=FALSE, cache=TRUE}
+output.forest <- randomForest(Attack ~ ., data = training, ntree = 70)
+plot(output.forest, main="Intento 03")
+```
+```{r intent_03_validations, echo=FALSE, cache=TRUE}
+pred <- predict(output.forest,testing)
+valid <- testing
+valid$Attack <- as.character(valid$Attack)
+valid$pred <- as.character(pred)
+valid$match <- valid$Attack == valid$pred
+table(valid$match)
+table(valid[, c("match", "Attack")])
+```
+```{r intent_03_conf_matrix, echo=FALSE, cache=TRUE}
+valid <- testing
+cm <- confusionMatrix(pred, testing$Attack)
+kableExtra::kable(cm$table)
+```
+<br>
+
+
+
+### Intento 04
+<br>
+En este cuarto intento, substituimos las variables provistas en el modelo original por  
+   + las que se han identificado como teniendo una correlación con las variables respuestas derivadas desde "Attack" con un coeficiente >= 0.6 (menos DstHostSameSrvRate que tiene una correlación fuerte con SameSrvRate),
+   + manteniendo las del intento 02,
+   + y DstHostRerrorRate del intento 03, pero removiendo RerrorRate, SrvRerrorRate, DstHostSrvRerrorRate porque tienen una correlación entre ellas muy fuerte (coef. > 0.96) lo que puede acabar siendo redundante y al final no ayudar, entonces nos quedamos con aquella de las cuatro que tiene mayor coeficiente de correlación con la variable respuesta "Attack". 
+   
+Esta vez, con este cuarto intento nos quedamos con resultados ligeramente mejores que los del original con FALSE: 1696, TRUE: 67846. 
+       
+```{r getting_Attack_GoodCorrelations, cache=TRUE, echo=FALSE}
+tryCatch(
+    expr = {knitr::kable(corrs[(corrs$feature1 == 'Attack' | corrs$feature2 == 'Attack')
+                               & abs(corrs$coefficient) >= 0.6
+                              & corrs$toIgnore != 'Yes',][1:5],  row.names = FALSE)
+   }, error = function(e){
+        print(paste("Try executing the first R Markdown file: [01 - Initial Data Discovery.Rmd].\n", e), row.names=FALSE)
+    }, warning = function(w){
+        print(paste("Try executing the first R Markdown file: [01 - Initial Data Discovery.Rmd].\n", e), row.names=FALSE)
+    }
+)
+```
+```{r intent_04_feature_selection, cache=TRUE}
+data1 <- data[,c("Land", "LoggedIn", "Service", "Flag", "SameSrvRate", "DstHostSrvCount", "Count", "NumShells"
+                 , "ProtocolType", "IsGuestLogin", "DiffSrvRate", "DstHostDiffSrvRate", "RootShell",  "Duration"
+                 , "DstHostRerrorRate", "Attack")]
+```
+```{r intent_04_train_test, echo=FALSE, cache=TRUE}
+data1$Attack <- as.factor(data1$Attack)
+inTrain <- suppressWarnings(createDataPartition(y=data1$Attack,p=0.1, list=FALSE))
+training <- data1[inTrain,]
+testing <- data1[-inTrain,]
+```
+```{r intent_04_train_random_forest, echo=FALSE, cache=TRUE}
+output.forest <- randomForest(Attack ~ ., data = training, ntree = 70)
+plot(output.forest, main="Intento 04")
+```
+```{r intent_04_validations, echo=FALSE, cache=TRUE}
+pred <- predict(output.forest,testing)
+valid <- testing
+valid$Attack <- as.character(valid$Attack)
+valid$pred <- as.character(pred)
+valid$match <- valid$Attack == valid$pred
+table(valid$match)
+table(valid[, c("match", "Attack")])
+```
+```{r intent_04_conf_matrix, echo=FALSE, cache=TRUE}
+valid <- testing
+cm <- confusionMatrix(pred, testing$Attack)
+kableExtra::kable(cm$table)
+```
+<br>
+
+
+
+### Intento 05
+<br>
+Para el quinto intento decidimos   
+   + seguir con las variables utilizadas en el cuarto intento   
+   + pero añadiéndoles una nueva, TotalBytes = SrcBytes + DstBytes.  
+   
+Esta vez, con este quinto intento se mejora significativamente los resultados comparados con los del modelo original con FALSE: 823, TRUE: 68719. 
+  
+  
+```{r intent_05_feature_selection, cache=TRUE}
+data <- data %>% mutate(TotalBytes = SrcBytes + DstBytes)
+data1 <- data[,c("TotalBytes", "Land", "LoggedIn", "Service", "Flag", "SameSrvRate", "DstHostSrvCount", "Count", "NumShells"
+                 , "ProtocolType", "IsGuestLogin", "DiffSrvRate", "DstHostDiffSrvRate", "RootShell",  "Duration"
+                 , "DstHostRerrorRate", "Attack")]
+```
+```{r intent_05_train_test, echo=FALSE, cache=TRUE}
+data1$Attack <- as.factor(data1$Attack)
+inTrain <- suppressWarnings(createDataPartition(y=data1$Attack,p=0.1, list=FALSE))
+training <- data1[inTrain,]
+testing <- data1[-inTrain,]
+```
+```{r intent_05_train_random_forest, echo=FALSE, cache=TRUE}
+output.forest <- randomForest(Attack ~ ., data = training, ntree = 70)
+plot(output.forest, main="Intento 05")
+```
+```{r intent_05_validations, echo=FALSE, cache=TRUE}
+pred <- predict(output.forest,testing)
+valid <- testing
+valid$Attack <- as.character(valid$Attack)
+valid$pred <- as.character(pred)
+valid$match <- valid$Attack == valid$pred
+table(valid$match)
+table(valid[, c("match", "Attack")])
+```
+```{r intent_05_conf_matrix, echo=FALSE, cache=TRUE}
+valid <- testing
+cm <- confusionMatrix(pred, testing$Attack)
+kableExtra::kable(cm$table)
+```
+<br>
+
+
+
+### Intento 06
+<br>
+En el sexto intento   
+   + conservamos las variables del quinto intento   
+   + pero esta vez añadiéndoles las variables que habían quedado fuera hasta ahora, pero tienen un coeficiente de correlación >= 0.5 con las variables respuestas, siendo al final solo la adición de Urgent dado que las demás ya estaban.     
+   
+Este sexto modelo sigue siendo significativamente mejor que el modelo original pero ligeramente peor que el quinto con FALSE: 906, TRUE: 68636. 
+
+Considerado que el algoritmo ejecutado con randomforest() da raramente los mismos resultados entre iteraciones con un mismo conjunto de dados, tendremos cuidado de incluir o no la variable Urgent.   
+   
+```{r getting_GoodResponseVar_correlations, cache=TRUE, echo=FALSE}
+tryCatch(
+    expr = {
+        exclude_fields <- c('Attack', 'AttackCat', 'IsAttack', 'IsDosAttack', 'IsProbeAttack', 'IsR2Lattack'
+                            , 'IsU2Rattack', 'IsOtherAttack')
+        knitr::kable(corrs[(corrs$feature1 %in% exclude_fields | corrs$feature2 %in% exclude_fields) 
+                           & abs(corrs$coefficient) >= 0.5 & corrs$pvalue <= 0.05  
+                           & corrs$toIgnore != 'Yes',][1:5],  row.names = FALSE)
+   }, error = function(e){
+        print(paste("Try executing the first R Markdown file: [01 - Initial Data Discovery.Rmd].\n", e), row.names=FALSE)
+    }, warning = function(w){
+        print(paste("Try executing the first R Markdown file: [01 - Initial Data Discovery.Rmd].\n", e), row.names=FALSE)
+    }
+)
+```
+
+```{r intent_06_feature_selection, cache=TRUE}
+data1 <- data[,c("TotalBytes", "Land", "LoggedIn", "Service", "Flag", "SameSrvRate", "DstHostSrvCount", "Count", "NumShells"
+                 , "Urgent", "ProtocolType", "IsGuestLogin", "DiffSrvRate", "DstHostDiffSrvRate", "RootShell",  "Duration"
+                 , "DstHostRerrorRate", "Attack")]
+```
+```{r intent_06_train_test, echo=FALSE, cache=TRUE}
+data1$Attack <- as.factor(data1$Attack)
+inTrain <- suppressWarnings(createDataPartition(y=data1$Attack,p=0.1, list=FALSE))
+training <- data1[inTrain,]
+testing <- data1[-inTrain,]
+```
+```{r intent_06_train_random_forest, echo=FALSE, cache=TRUE}
+output.forest <- randomForest(Attack ~ ., data = training, ntree = 70)
+plot(output.forest, main="Intent 06")
+```
+```{r intent_06_validations, echo=FALSE, cache=TRUE}
+pred <- predict(output.forest,testing)
+valid <- testing
+valid$Attack <- as.character(valid$Attack)
+valid$pred <- as.character(pred)
+valid$match <- valid$Attack == valid$pred
+table(valid$match)
+table(valid[, c("match", "Attack")])
+```
+```{r intent_06_conf_matrix, echo=FALSE, cache=TRUE}
+valid <- testing
+cm <- confusionMatrix(pred, testing$Attack)
+kableExtra::kable(cm$table)
+```
+<br>
+
+
+
+### Intento 07
+<br>
+Con el séptimo intento   
+   + conservamos las mismas variables que en el quinto intento   
+   + pero, para intentar predecir mejor los tipos de ataques U2R, siendo este el tipo más grave que deberíamos identificar, se les añadió una “feature” nueva en base a una combinación de aquellas que tienen mayor correlación con este tipo de ataques, NumCompromised, NumRoot, NumShells y NumFile.     
+
+Este séptimo modelo es equivalente al quinto con FALSE: 824, TRUE: 68718. 
+
+Al final la nueva variable no parece haber agregado beneficio pero, como para el sexto experimento, considerado que el algoritmo ejecutado con randomforest() da raramente los mismos resultados entre iteraciones con un mismo conjunto de dados, tendremos cuidado de incluir o no la nueva variable U2RFeatures.   
+
+```{r intent_07_feature_selection, cache=TRUE}
+data$U2RFeatures <- as.integer(data$NumCompromised > 0 | data$NumRoot > 0 | data$NumShells > 0 | data$NumFile > 0)
+data1 <- data[,c("U2RFeatures", "TotalBytes", "Land", "LoggedIn", "Service", "Flag", "SameSrvRate", "DstHostSrvCount"
+                 , "Count", "NumShells", "ProtocolType", "IsGuestLogin", "DiffSrvRate", "DstHostDiffSrvRate", "RootShell"
+                 ,  "Duration", "DstHostRerrorRate", "Attack")]
+```
+```{r intent_07_train_test, echo=FALSE, cache=TRUE}
+data1$Attack <- as.factor(data1$Attack)
+inTrain <- suppressWarnings(createDataPartition(y=data1$Attack,p=0.1, list=FALSE))
+training <- data1[inTrain,]
+testing <- data1[-inTrain,]
+```
+```{r intent_07_train_random_forest, echo=FALSE, cache=TRUE}
+output.forest <- randomForest(Attack ~ ., data = training, ntree = 70)
+plot(output.forest, main="Intento 07")
+```
+```{r intent_07_validations, echo=FALSE, cache=TRUE}
+pred <- predict(output.forest,testing)
+valid <- testing
+valid$Attack <- as.character(valid$Attack)
+valid$pred <- as.character(pred)
+valid$match <- valid$Attack == valid$pred
+table(valid$match)
+table(valid[, c("match", "Attack")])
+```
+```{r intent_07_conf_matrix, echo=FALSE, cache=TRUE}
+valid <- testing
+cm <- confusionMatrix(pred, testing$Attack)
+kableExtra::kable(cm$table)
+```
+<br>
+
+
+
+### Intento 08
+<br>
+Para el octavo intento,  
+   + conservamos las mismas variables que en el quinto intento   
+   + pero substituyendo algunas variables numéricas por otra que creemos que las resumen. 
+
+La forma adoptada para sumarizar las variables numéricas fue de normalizarlas y después de sacar la média de los valores.
+Para eso utilizamos la función scale() que, según chatGPT, 
+   + calcula las puntuaciones z de las columnas numéricas especificadas,
+   + resta la media de cada columna y la divide por la desviación estándar,
+   + con lo que cada columna tiene una media de 0 y una desviación estándar de 1. 
+
+"<i>Las puntuaciones Z, también conocidas como puntuaciones estándar, son una medida de cuántas desviaciones estándar hay entre una observación o un punto de datos y la media de una distribución. Una puntuación z indica la posición relativa de un punto de datos individual en relación con la media de la distribución.
+El cálculo de una puntuación z consiste en restar la media de la distribución del punto de datos individual y dividirla por la desviación típica de la distribución.</i>"
+<br>
+
+En este experimento hicimos más de una tentativa pero las que realmente parecieron agregar algo fue la sumarización de las "RerrorRate". Al final, las variables realacionadas con RerrorRate aparecen entre las que tienen mayor correlación entre ellas y también con las variables respuestas. 
+   + Las variables realacionadas con SerrorRate aparentaban tener una correlación solo moderada con las variables respuestas.  
+   + Las variables relacionadas con DiffSrvRate aparentaban tener una correlación solo moderada con las variables respuestas, pero con IsProbeAttack aparecía como teniendo una buena correlación entonces también la continuaremos derivando aunque no la selecionemos para el modelo general. 
+   + Las variables relacionadas con SameSrvRate tampoco mejoraron el modelo, entonces preferimos guardarlas por separado. Estas tenían una correlación entre ellas con un coefficientes entre 0.83 y 0.94.
+<br>
+
+Finalmente este octavo modelo es el que mejores resultados dio con FALSE: 800, TRUE: 68742. 
+
+Lo dejamos aquí y consideramos este modelo como el final.   
+
+```{r intent_08_feature_selection, cache=TRUE}
+normalized_Vars <- data.frame(scale(data[, c('DstHostRerrorRate', 'RerrorRate', 'SrvRerrorRate', 'DstHostSrvRerrorRate'
+                                             , 'DiffSrvRate', 'DstHostDiffSrvRate'
+                                             , 'SameSrvRate', 'SameSrvRate', 'DstHostSrvCount'
+                                             , 'SerrorRate', 'DstHostSerrorRate', 'SrvSerrorRate', 'DstHostSrvSerrorRate')]))
+data$SameSrvPct <- apply(normalized_Vars, 1, function(row){
+    return(mean(row['SameSrvRate'], row['SameSrvRate'], row['DstHostSrvCount']))})
+data$DiffSrvPct <- apply(normalized_Vars, 1, function(row){
+    return(mean(row['DstHostDiffSrvRate'], row['DiffSrvRate']))})
+data$RerrorsPct <- apply(normalized_Vars, 1, function(row){
+    return(mean(row['DstHostRerrorRate'], row['RerrorRate'], row['SrvRerrorRate'], row['DstHostSrvRerrorRate']))})
+data$SerrorsPct <- apply(normalized_Vars, 1, function(row){
+    return(mean(row['DstHostSerrorRate'], row['SerrorRate'], row['SrvSerrorRate'], row['DstHostSrvSerrorRate']))})
+data1 <- data[,c("TotalBytes", "Land", "LoggedIn", "Service", "Flag", "SameSrvRate", "DstHostSrvCount", "Count", "NumShells"
+                 , "ProtocolType", "IsGuestLogin", "DiffSrvRate", "DstHostDiffSrvRate", "RootShell",  "Duration"
+                 , "RerrorsPct", "Attack")]
+```
+```{r intent_08_train_test, echo=FALSE, cache=TRUE}
+data1$Attack <- as.factor(data1$Attack)
+inTrain <- suppressWarnings(createDataPartition(y=data1$Attack,p=0.1, list=FALSE))
+training <- data1[inTrain,]
+testing <- data1[-inTrain,]
+```
+```{r intent_08_train_random_forest, echo=FALSE, cache=TRUE}
+output.forest <- randomForest(Attack ~ ., data = training, ntree = 70)
+plot(output.forest, main="Intento 08")
+```
+```{r intent_08_validations, echo=FALSE, cache=TRUE}
+pred <- predict(output.forest,testing)
+valid <- testing
+valid$Attack <- as.character(valid$Attack)
+valid$pred <- as.character(pred)
+valid$match <- valid$Attack == valid$pred
+table(valid$match)
+table(valid[, c("match", "Attack")])
+```
+```{r intent_08_conf_matrix, echo=FALSE, cache=TRUE}
+valid <- testing
+cm <- confusionMatrix(pred, testing$Attack)
+kableExtra::kable(cm$table)
+```
+<br>
+
+
+
+### Evaluación del modelo del experimiento 8 contra el fichero "Full"
+
+El modelo ocho acertó bastante bien con solo 1.15 % de errores, ya contra el fichero data_full no fue igual ya que observamos 6.96% de errores.
+
+Por falta de más tiempo ya lo dejamos aquí pero entendemos que habría mucho más que mirar para intentar mejorar esta predicción, como por ejemplo: 
+   * intentar jugar con el tamaño de los ficheros de training y testing para optimizar los modelos derivados,
+   * intentar utilizar algoritmos para clasificar las características y así identificar padrones que se nos habrán escapado,
+   * intentar encontrar modelos para categoría de ataque de forma a verificar si especializando los modelos y descartando los ataques ya encontrados se podría mejorar todavía más el desempeño,
+   * conseguir utilizar otros algoritmos predictivos para compararlos con los resultados del Random Forest (intentamos sin éxito usar el modelo neuronal - fit(), SVM -  svm() o CART - train()). 
+<br><br>
+
+```{r Final_Results, echo=FALSE, cache=TRUE}
+
+cat(paste("         -------------------------------------\n         |    Modelo 8    | Contra data_full |\n"
+          ,"--------|----------------|------------------|\n | FALSE |   800 |  1.15% |   21656 |  6.96% |\n"
+          , "|  TRUE | 68742 | 98.85% |  289373 | 93.04% |\n --------|----------------|------------------|"), fill = TRUE)
+```
+```{r FullValidation_feature_selection, cache=TRUE}
+data_full$Attack <- gsub("[.,]", "", data_full$Attack)
+data_full <- data_full %>% mutate(TotalBytes = SrcBytes + DstBytes)
+normalized_Vars <- data.frame(scale(data_full[, c('DstHostRerrorRate', 'RerrorRate', 'SrvRerrorRate'
+                                                  , 'DstHostSrvRerrorRate', 'DiffSrvRate', 'DstHostDiffSrvRate'
+                                                  , 'SameSrvRate', 'SameSrvRate', 'DstHostSrvCount', 'SerrorRate'
+                                                  , 'DstHostSerrorRate', 'SrvSerrorRate', 'DstHostSrvSerrorRate')]))
+data_full$RerrorsPct <- apply(normalized_Vars, 1, function(row){
+    return(mean(row['DstHostRerrorRate'], row['RerrorRate'], row['SrvRerrorRate'], row['DstHostSrvRerrorRate']))})
+data1 <- data_full[,c("TotalBytes", "Land", "LoggedIn", "Service", "Flag", "SameSrvRate", "DstHostSrvCount", "Count"
+                      , "NumShells", "ProtocolType", "IsGuestLogin", "DiffSrvRate", "DstHostDiffSrvRate", "RootShell"
+                      ,  "Duration", "RerrorsPct", "Attack")]
+```
+```{r FullValidation_Prediction, echo=FALSE, cache=TRUE}
+data1$Attack <- as.factor(data1$Attack)
+pred <- predict(output.forest,data1)
+valid <- data1
+valid$Attack <- as.character(valid$Attack)
+valid$pred <- as.character(pred)
+valid$match <- valid$Attack == valid$pred
+table(valid$match)
+table(valid[, c("match", "Attack")])
+```
+```{r FullValidation_conf_matrix, echo=FALSE, cache=TRUE}
+valid <- data1
+cm <- confusionMatrix(pred, data1$Attack)
+kableExtra::kable(cm$table)
 ```
 
